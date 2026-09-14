@@ -1,0 +1,9 @@
+{
+  "name": "clt-truco",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CLT - Champions League de Truco: marcador de truco paulista + campeonato com rodizio automatico",
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0"
+  }
+}
