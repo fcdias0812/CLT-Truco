@@ -67,6 +67,29 @@ caracteres (ex.: `77SYWB`). Quem abrir o link `…/?sala=77SYWB` — ou digitar 
 Sem backend configurado (por exemplo publicando só no GitHub Pages), o app funciona igual, mas
 só naquele aparelho — a opção de sala some sozinha e aparece um selo "offline".
 
+### Apelido e registro de quem fez o quê
+Ao entrar numa sala compartilhada pela primeira vez, o app pergunta um apelido (ex.: "Rai").
+Não é login nem senha — é só um rótulo salvo naquele aparelho, que passa a aparecer em:
+
+- **Histórico de cada partida** ("O que rolou"): cada linha mostra quem tocou o botão.
+- **Histórico de uma partida já encerrada**: o ícone 👁 no card do jogo concluído abre o
+  mão-a-mão completo, preservado mesmo depois de salvo no campeonato.
+- **Registro do campeonato** (aba "Registro"): quem marcou presença, iniciou, cancelou ou
+  reabriu um jogo, sorteou o rodízio de novo, etc.
+
+Dá para trocar o apelido a qualquer momento pelo menu **⋯**. Não impede ninguém de agir por
+outra pessoa (continua sendo "qualquer um pode marcar", como o grupo escolheu) — é só o
+rastro de quem fez o quê, útil se algum placar ficar em dúvida.
+
+### Código vazou? Alguém saiu no meio?
+- **Trocar código da sala** (menu ⋯): gera um código novo pra mesma sala e desativa o antigo
+  na hora, sem perder nada do campeonato — para quando o link foi parar em grupo errado.
+- **Gerenciar jogadores** (botão na tela do campeonato): renomear alguém, ou marcar que
+  **saiu do campeonato**. Diferente de só desmarcar presença (isso é "não veio hoje"), marcar
+  como "saiu" resolve os jogos pendentes dessa pessoa como **pulados** — assim o campeonato
+  consegue fechar mesmo que alguém desista no meio. É reversível: dá pra marcar "voltou" e os
+  jogos pulados dela voltam para a fila.
+
 ---
 
 ## Rodar na sua máquina
@@ -150,6 +173,7 @@ Em qualquer caso, abra o link no celular e use "Adicionar à tela de início" �
 | `api/criar.js` | `POST /api/criar` — cria a sala e devolve o código |
 | `api/estado.js` | `GET /api/estado` — devolve o campeonato só quando mudou |
 | `api/acao.js` | `POST /api/acao` — aplica uma ação com controle de versão |
+| `api/trocar-codigo.js` | `POST /api/trocar-codigo` — gera um código novo pra mesma sala |
 | `lib/db.js` | Conexão com o Neon e utilidades das funções |
 | `dev-server.js` | Servidor local de testes (não vai para produção) |
 

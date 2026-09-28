@@ -107,6 +107,20 @@ const servidor = http.createServer(async function (req, res) {
     return json(res, 200, { versao: linha.versao, camp: linha.camp });
   }
 
+  if (rota === '/api/trocar-codigo' && req.method === 'POST') {
+    const corpo = await lerCorpo(req);
+    const atual = String(corpo.codigo || '').toUpperCase();
+    const linha = banco[atual];
+    if (!linha) return json(res, 404, { erro: 'sala nao encontrada' });
+    let novo;
+    do { novo = novoCodigo(); } while (banco[novo]);
+    linha.camp.codigo = novo;
+    banco[novo] = linha;
+    delete banco[atual];
+    gravar();
+    return json(res, 200, { codigo: novo, versao: linha.versao, camp: linha.camp });
+  }
+
   /* arquivos estaticos */
   let arquivo = path.join(RAIZ, rota === '/' ? 'index.html' : decodeURIComponent(rota));
   if (!arquivo.startsWith(RAIZ)) { res.writeHead(403); res.end('nao'); return; }

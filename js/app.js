@@ -198,12 +198,14 @@
       '/' + c.jogadores.length + '</div><div class="r">Presentes</div></div>' +
       '</div>';
 
+    var jogadoresAtivos = c.jogadores.filter(function (j) { return !j.inativo; });
     h += '<div class="titulo-secao">Quem está na mesa agora<span style="font-weight:400;text-transform:none;letter-spacing:0">toque para marcar</span></div>';
-    h += '<div class="chips" style="margin-bottom:14px">' + c.jogadores.map(function (j) {
+    h += '<div class="chips" style="margin-bottom:10px">' + jogadoresAtivos.map(function (j) {
       var on = S.presente(j.id);
       return '<button class="chip ' + (on ? 'on' : 'off') + '" data-acao="presenca" data-arg="' + j.id + '">' +
         (on ? '✓ ' : '✕ ') + esc(j.nome) + '</button>';
     }).join('') + '</div>';
+    h += '<button class="botao fantasma pequeno" data-acao="jogadores" style="margin-bottom:14px">👥 Gerenciar jogadores</button>';
 
     if (pausadas.length) {
       h += '<div class="titulo-secao">Partidas em andamento</div>';
@@ -259,6 +261,7 @@
         return '<tr class="' + (i === 0 && l.j ? 'top1' : '') + '">' +
           '<td class="pos">' + (i + 1) + '</td>' +
           '<td class="nome">' + (i === 0 && l.j ? '👑 ' : '') + esc(l.nome) +
+          (l.inativo ? ' <small style="color:var(--texto-fraco)">(saiu)</small>' : '') +
           '<small>' + l.pf + ' pontos feitos · ' + l.ps + ' sofridos</small></td>' +
           '<td>' + l.j + '</td><td class="destaque">' + l.v + '</td><td>' + l.d + '</td>' +
           '<td>' + (l.sd > 0 ? '+' : '') + l.sd + '</td><td>' + l.ap + '%</td></tr>';
@@ -266,16 +269,19 @@
 
     h += '<div class="titulo-secao">Tabela de jogos</div>';
     h += '<div class="abas">' +
-      ['proximos', 'concluidos', 'rodizio'].map(function (a) {
-        var rot = { proximos: 'A jogar', concluidos: 'Concluídos', rodizio: 'Equilíbrio' }[a];
+      ['proximos', 'concluidos', 'registro', 'rodizio'].map(function (a) {
+        var rot = { proximos: 'A jogar', concluidos: 'Concluídos', registro: 'Registro', rodizio: 'Equilíbrio' }[a];
         return '<button class="' + (E.aba === a ? 'on' : '') + '" data-acao="aba" data-arg="' + a + '">' + rot + '</button>';
       }).join('') + '</div>';
 
     if (E.aba === 'rodizio') {
       h += viewEquilibrio();
+    } else if (E.aba === 'registro') {
+      h += viewRegistro();
     } else {
       var lista = c.jogos.filter(function (j) {
-        return E.aba === 'concluidos' ? j.status === 'concluido' : j.status !== 'concluido';
+        if (E.aba === 'concluidos') return j.status === 'concluido' || j.status === 'pulado';
+        return j.status !== 'concluido' && j.status !== 'pulado';
       });
       if (E.aba === 'concluidos') lista = lista.slice().reverse();
       h += lista.length ? lista.map(function (j) { return cartaoJogo(j, false); }).join('')
@@ -284,26 +290,40 @@
     return h;
   }
 
+  /* registro de auditoria do campeonato inteiro: quem presenteou, iniciou,
+     cancelou, mudou config etc — o mao-a-mao de cada partida fica dentro
+     dela mesma (historico()/modalHistoricoJogo), pra nao duplicar aqui */
+  function viewRegistro() {
+    var registro = S.log();
+    if (!registro.length) return '<div class="vazio">nenhuma ação registrada ainda</div>';
+    return '<div class="cartao"><ul class="historico">' + listaHistorico(registro) + '</ul></div>';
+  }
+
   function cartaoJogo(j, destaque) {
     var c = E.camp;
     var feito = j.status === 'concluido';
+    var pulado = j.status === 'pulado';
     var aberto = j.status === 'em_andamento';
     var p = aberto ? S.partida(j.n) : null;
     var ausentes = S.ausentesDoJogo(j);
-    var classe = 'jogo' + (feito ? ' feito' : '') + (destaque ? ' prox' : '') +
+    var classe = 'jogo' + (feito ? ' feito' : '') + (pulado ? ' pulado' : '') + (destaque ? ' prox' : '') +
       (ausentes.length ? ' bloqueado' : '') + (aberto ? ' pausada' : '');
     var h = '<div class="' + classe + '">' +
-      '<div class="num">' + (feito ? '✓' : (aberto ? '⏸' : j.n)) + '</div>' +
+      '<div class="num">' + (feito ? '✓' : pulado ? '⏭' : (aberto ? '⏸' : j.n)) + '</div>' +
       '<div class="times">' +
       '<span class="' + (j.vencedor === 'A' ? 'ganhou' : '') + '">' + esc(S.nomes(j.a)) + '</span>' +
       '<span class="vs"> VS </span>' +
       '<span class="' + (j.vencedor === 'B' ? 'ganhou' : '') + '">' + esc(S.nomes(j.b)) + '</span>' +
       (j.tipo === 'x1' ? '<div class="fora">desempate X1</div>' : '') +
-      (!feito && j.fora && j.fora.length ? '<div class="fora">fora: ' + esc(S.nomes(j.fora)) + '</div>' : '') +
+      (pulado ? '<div class="fora">pulado — alguém saiu do campeonato</div>' : '') +
+      (!feito && !pulado && j.fora && j.fora.length ? '<div class="fora">fora: ' + esc(S.nomes(j.fora)) + '</div>' : '') +
       (ausentes.length ? '<div class="fora">⏸ aguardando ' + esc(S.nomes(ausentes)) + '</div>' : '') +
       '</div>';
     if (feito) {
       h += '<div class="res">' + j.placar.A + '<span style="color:var(--texto-fraco)">×</span>' + j.placar.B + '</div>' +
+        (j.historico && j.historico.length
+          ? '<button class="icone" data-acao="ver-historico-jogo" data-arg="' + j.n + '" title="ver histórico" style="width:32px;height:32px;font-size:14px">👁</button>'
+          : '') +
         '<button class="icone" data-acao="reabrir" data-arg="' + j.n + '" title="corrigir resultado" style="width:32px;height:32px;font-size:14px">✎</button>';
     } else if (aberto) {
       h += '<div class="res">' + (p ? p.pontos.A + '×' + p.pontos.B : '—') + '</div>' +
@@ -476,9 +496,22 @@
   function historico(p) {
     if (!p.historico.length) return '';
     return '<div class="titulo-secao">O que rolou</div><div class="cartao"><ul class="historico">' +
-      p.historico.slice(0, 40).map(function (l) {
-        return '<li><b>' + esc(l.texto) + '</b> · <span>' + l.placar + '</span></li>';
-      }).join('') + '</ul></div>';
+      listaHistorico(p.historico) + '</ul></div>';
+  }
+
+  /* usado tanto pelo historico mao-a-mao de uma partida (tem placar) quanto
+     pelo registro geral do campeonato (tem so data/hora) */
+  function formatarQuando(iso) {
+    var d = new Date(iso);
+    if (!iso || isNaN(d)) return '';
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+  function listaHistorico(lista) {
+    return lista.slice(0, 80).map(function (l) {
+      var extra = l.placar != null ? l.placar : formatarQuando(l.em);
+      return '<li>' + (l.autor ? '<span class="autor">' + esc(l.autor) + '</span> ' : '') +
+        '<b>' + esc(l.texto) + '</b>' + (extra ? ' · <span>' + esc(extra) + '</span>' : '') + '</li>';
+    }).join('');
   }
 
   /* ---------------- modais ---------------- */
@@ -533,6 +566,50 @@
     );
   }
 
+  function modalApelido(motivo) {
+    abrirModal(
+      '<h3>Como você quer aparecer?</h3>' +
+      '<p>' + esc(motivo || 'Esse apelido aparece no histórico de jogadas, pra saber quem marcou o quê. Fica salvo só neste aparelho — dá pra trocar quando quiser.') + '</p>' +
+      '<label class="campo"><span>Apelido</span>' +
+      '<input id="fApelido" value="' + esc(S.apelido() || '') + '" placeholder="ex.: Rai" maxlength="30"></label>' +
+      '<button class="botao primario" data-acao="salvar-apelido">Salvar</button>' +
+      '<div style="height:8px"></div>' +
+      '<button class="botao fantasma" data-acao="fechar">Pular por agora</button>'
+    );
+  }
+
+  function modalJogadores() {
+    var c = E.camp;
+    abrirModal(
+      '<h3>Jogadores</h3>' +
+      '<p>Renomeie ou marque quem saiu de vez do campeonato — os jogos pendentes dessa pessoa viram "pulado" e o campeonato consegue fechar mesmo sem ela.</p>' +
+      c.jogadores.map(function (j) {
+        return '<div class="linha-jogador' + (j.inativo ? ' inativo' : '') + '">' +
+          '<span class="nome-jogador">' + esc(j.nome) + (j.inativo ? ' <small>fora do campeonato</small>' : '') + '</span>' +
+          '<div class="linha-botoes" style="gap:6px;flex:none">' +
+          '<button class="botao pequeno fantasma" data-acao="renomear-jogador" data-arg="' + j.id + '" title="renomear">✎</button>' +
+          (j.inativo
+            ? '<button class="botao pequeno ok" data-acao="reativar-jogador" data-arg="' + j.id + '">Voltou</button>'
+            : '<button class="botao pequeno perigo" data-acao="inativar-jogador" data-arg="' + j.id + '">Saiu</button>') +
+          '</div></div>';
+      }).join('') +
+      '<div style="height:8px"></div>' +
+      '<button class="botao fantasma" data-acao="fechar">Fechar</button>'
+    );
+  }
+
+  function modalHistoricoJogo(n) {
+    var j = S.jogo(n);
+    if (!j || !j.historico || !j.historico.length) return;
+    abrirModal(
+      '<h3>Histórico do jogo ' + j.n + '</h3>' +
+      '<p class="sub">' + esc(S.nomes(j.a)) + ' <b>' + j.placar.A + ' x ' + j.placar.B + '</b> ' + esc(S.nomes(j.b)) + '</p>' +
+      '<ul class="historico" style="max-height:55vh">' + listaHistorico(j.historico) + '</ul>' +
+      '<div style="height:12px"></div>' +
+      '<button class="botao fantasma" data-acao="fechar">Fechar</button>'
+    );
+  }
+
   function modalMenu() {
     var temCamp = !!E.camp;
     abrirModal(
@@ -541,6 +618,11 @@
         ? 'Sala <b class="codigo">' + esc(E.codigo) + '</b> — ' +
           (E.conexao === 'ok' ? 'conectada: todo mundo vê o mesmo placar.' : 'sem conexão no momento.')
         : 'Campeonato só neste aparelho.') + '</p>' +
+      '<button class="botao" data-acao="apelido">👤 Apelido: ' +
+      (S.apelido() ? esc(S.apelido()) : '<span style="color:var(--texto-fraco)">não definido, toque pra criar</span>') +
+      '</button><div style="height:8px"></div>' +
+      (temCamp ? '<button class="botao" data-acao="jogadores">👥 Jogadores</button><div style="height:8px"></div>' : '') +
+      (E.codigo ? '<button class="botao" data-acao="trocar-codigo">🔑 Trocar código da sala</button><div style="height:8px"></div>' : '') +
       (temCamp ? '<button class="botao" data-acao="exportar">⤓ Exportar campeonato (backup)</button><div style="height:8px"></div>' : '') +
       '<button class="botao" data-acao="importar">⤒ Importar backup</button><div style="height:8px"></div>' +
       (E.backend === 'ok' ? '<button class="botao" data-acao="entrar">⌨ Entrar em outra sala</button><div style="height:8px"></div>' : '') +
@@ -585,7 +667,8 @@
     if (E.jogoAberto) {
       S.despachar(Object.assign({ tipo: 'lance', n: E.jogoAberto }, l));
     } else if (E.avulsa) {
-      N.lanceNaPartida(E.avulsa, l);
+      var r = N.lanceNaPartida(E.avulsa, l);
+      if (!r.ok && r.erro) S.avisar(r.erro);
       S.salvar();
       render();
     }
@@ -624,8 +707,11 @@
           nome: rascunho.nome, nomes: rascunho.nomes, tamanhoTime: rascunho.tamanhoTime,
           totalJogos: Math.max(1, rascunho.totalJogos), valorAposta: rascunho.valorAposta
         }, rascunho.online).then(function (r) {
-          if (!r.ok) S.avisar('não consegui criar a sala: ' + r.erro);
+          if (!r.ok) { S.avisar('não consegui criar a sala: ' + r.erro); render(); return; }
           render();
+          if (r.online && !S.apelido()) {
+            modalApelido('Antes de começar: como você quer aparecer no histórico desta sala?');
+          }
         });
         break;
       }
@@ -637,9 +723,12 @@
         var b = document.querySelector('[data-acao="confirmar-entrar"]');
         if (b) { b.disabled = true; b.textContent = 'entrando...'; }
         S.entrarNaSala(cod).then(function (r) {
-          if (r.ok) fecharModal();
-          else { S.avisar(r.erro); modalEntrar(); }
-          render();
+          if (r.ok) {
+            fecharModal(); render();
+            if (!S.apelido()) modalApelido('Antes de começar: como você quer aparecer no histórico desta sala?');
+          } else {
+            S.avisar(r.erro); modalEntrar(); render();
+          }
         });
         break;
       }
@@ -752,6 +841,52 @@
         location.reload();
         break;
       }
+
+      case 'apelido': fecharModal(); modalApelido(); break;
+      case 'salvar-apelido': {
+        var inpApelido = document.getElementById('fApelido');
+        S.definirApelido(inpApelido ? inpApelido.value : '');
+        fecharModal(); render();
+        break;
+      }
+
+      case 'jogadores': fecharModal(); modalJogadores(); break;
+      case 'renomear-jogador': {
+        var jogAtual = E.camp.jogadores.filter(function (x) { return x.id === arg; })[0];
+        var novoNome = prompt('Novo nome:', jogAtual ? jogAtual.nome : '');
+        if (novoNome === null) return;
+        S.despachar({ tipo: 'renomear-jogador', jogador: arg, nome: novoNome }).then(function () { modalJogadores(); });
+        break;
+      }
+      case 'inativar-jogador': {
+        if (!confirm('Marcar esse jogador como fora do campeonato? Os jogos pendentes dele viram "pulado" (dá pra desfazer depois).')) return;
+        S.despachar({ tipo: 'jogador-inativo', jogador: arg, valor: true }).then(function () { modalJogadores(); });
+        break;
+      }
+      case 'reativar-jogador':
+        S.despachar({ tipo: 'jogador-inativo', jogador: arg, valor: false }).then(function () { modalJogadores(); });
+        break;
+
+      case 'trocar-codigo': {
+        if (!confirm('Trocar o código da sala? O código atual (' + E.codigo + ') para de funcionar na hora — quem ainda não pegou o novo fica de fora até você avisar.')) return;
+        fecharModal();
+        S.trocarCodigo().then(function (r) {
+          if (!r.ok) { S.avisar('não consegui trocar: ' + r.erro); render(); return; }
+          render();
+          abrirModal(
+            '<h3>Código novo</h3><p>O código antigo não funciona mais. Avise o grupo com este aqui:</p>' +
+            '<div class="codigo-grande" style="text-align:center">' + esc(r.codigo) + '</div>' +
+            '<div class="linha-botoes">' +
+            '<button class="botao pequeno" data-acao="copiar-link">Copiar link</button>' +
+            '<button class="botao pequeno" data-acao="copiar-codigo">Copiar código</button>' +
+            '</div><div style="height:8px"></div>' +
+            '<button class="botao fantasma" data-acao="fechar">Fechar</button>'
+          );
+        });
+        break;
+      }
+
+      case 'ver-historico-jogo': modalHistoricoJogo(parseInt(arg, 10)); break;
 
       case 'exportar': {
         var blob = new Blob([S.exportar()], { type: 'application/json' });

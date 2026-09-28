@@ -9,6 +9,7 @@ window.CLT = window.CLT || {};
 
   var N = CLT.nucleo, api = CLT.api;
   var CHAVE = 'clt.v2';
+  var CHAVE_APELIDO = 'clt.apelido';
 
   function padrao() {
     return {
@@ -58,6 +59,24 @@ window.CLT = window.CLT || {};
 
   function avisar(texto, tipo) {
     estado.aviso = texto ? { texto: texto, tipo: tipo || 'erro', em: Date.now() } : null;
+  }
+
+  /* ---------------- apelido do aparelho ----------------
+   * Nao e login: e so um rotulo que a pessoa escolhe pra aparecer no historico
+   * ("Rai pediu TRUCO") em vez de ficar tudo anonimo. Fica salvo neste aparelho,
+   * independente de qual sala/campeonato esta aberto no momento. */
+
+  function apelido() {
+    try { return (localStorage.getItem(CHAVE_APELIDO) || '').trim() || null; }
+    catch (e) { return null; }
+  }
+
+  function definirApelido(nome) {
+    try {
+      nome = String(nome || '').trim().slice(0, 30);
+      if (nome) localStorage.setItem(CHAVE_APELIDO, nome);
+      else localStorage.removeItem(CHAVE_APELIDO);
+    } catch (e) {}
   }
 
   /* ---------------- sincronizacao ---------------- */
@@ -124,9 +143,10 @@ window.CLT = window.CLT || {};
 
   /* ---------------- acoes ---------------- */
 
-  function despachar(acao) {
+  function despachar(acaoBruta) {
     if (!estado.camp) return Promise.resolve(false);
 
+    var acao = Object.assign({}, acaoBruta, { autor: apelido() || undefined });
     var antes = N.clonar(estado.camp);
     var r = N.aplicar(estado.camp, acao);
     if (!r.ok) {
@@ -220,21 +240,37 @@ window.CLT = window.CLT || {};
     salvar();
   }
 
+  /* troca o codigo da sala (ex.: o link vazou) sem perder nada do campeonato */
+  function trocarCodigo() {
+    if (!estado.codigo) return Promise.resolve({ ok: false, erro: 'esta sala nao e compartilhada' });
+    return api.trocarCodigo(estado.codigo).then(function (r) {
+      estado.codigo = r.codigo;
+      estado.versao = r.versao;
+      estado.camp = r.camp;
+      salvar();
+      return { ok: true, codigo: r.codigo };
+    }).catch(function (e) {
+      return { ok: false, erro: e.message };
+    });
+  }
+
   /* ---------------- atalhos de leitura ---------------- */
   function camp() { return estado.camp; }
   function nome(idJog) { return estado.camp ? N.jogador(estado.camp, idJog) : '?'; }
   function nomes(ids) { return estado.camp ? N.nomes(estado.camp, ids) : ''; }
   function presente(idJog) { return estado.camp ? N.presente(estado.camp, idJog) : true; }
+  function inativo(idJog) { return estado.camp ? N.inativo(estado.camp, idJog) : false; }
   function proximoJogo() { return estado.camp ? N.proximoJogo(estado.camp) : null; }
   function adiados() { return estado.camp ? N.adiados(estado.camp) : []; }
   function emAndamento() { return estado.camp ? N.emAndamento(estado.camp) : []; }
-  function progresso() { return estado.camp ? N.progresso(estado.camp) : { feitos: 0, total: 0, andamento: 0 }; }
+  function progresso() { return estado.camp ? N.progresso(estado.camp) : { feitos: 0, total: 0, andamento: 0, pulados: 0 }; }
   function classificacao() { return estado.camp ? N.classificacao(estado.camp) : []; }
   function empatadosNoTopo() { return estado.camp ? N.empatadosNoTopo(estado.camp) : []; }
   function jogo(n) { return estado.camp ? N.acharJogo(estado.camp, n) : null; }
   function partida(n) { return estado.camp && estado.camp.partidas ? estado.camp.partidas[n] : null; }
   function ausentesDoJogo(j) { return estado.camp ? N.ausentesDoJogo(estado.camp, j) : []; }
   function jogoLiberado(j) { return estado.camp ? N.jogoLiberado(estado.camp, j) : true; }
+  function log() { return estado.camp && estado.camp.log ? estado.camp.log : []; }
 
   function exportar() {
     return JSON.stringify({ codigo: estado.codigo, camp: estado.camp }, null, 2);
@@ -252,13 +288,15 @@ window.CLT = window.CLT || {};
 
   CLT.store = {
     carregar: carregar, salvar: salvar, get: get, avisar: avisar,
+    apelido: apelido, definirApelido: definirApelido,
     iniciarSync: iniciarSync, sincronizarAgora: sincronizarAgora,
     despachar: despachar,
     criarCampeonato: criarCampeonato, entrarNaSala: entrarNaSala, sairDaSala: sairDaSala,
-    camp: camp, nome: nome, nomes: nomes, presente: presente,
+    trocarCodigo: trocarCodigo,
+    camp: camp, nome: nome, nomes: nomes, presente: presente, inativo: inativo,
     proximoJogo: proximoJogo, adiados: adiados, emAndamento: emAndamento,
     progresso: progresso, classificacao: classificacao, empatadosNoTopo: empatadosNoTopo,
-    jogo: jogo, partida: partida, ausentesDoJogo: ausentesDoJogo, jogoLiberado: jogoLiberado,
+    jogo: jogo, partida: partida, ausentesDoJogo: ausentesDoJogo, jogoLiberado: jogoLiberado, log: log,
     exportar: exportar, importar: importar
   };
 })(window.CLT);

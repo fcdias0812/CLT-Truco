@@ -20,7 +20,7 @@
 
   function criarCampeonato(dados) {
     var jogadores = (dados.nomes || []).map(function (n) {
-      return { id: id(), nome: String(n).trim() };
+      return { id: id(), nome: String(n).trim(), inativo: false };
     });
     var ids = jogadores.map(function (j) { return j.id; });
     var semente = dados.semente || (Date.now() % 100000);
@@ -40,6 +40,7 @@
       presentes: presentes,
       partidas: {},
       jogos: montarJogos(SC.gerarRodizio(ids, tamanho, total, semente)),
+      log: [],
       encerrado: false
     };
   }
@@ -49,9 +50,20 @@
     return brutos.map(function (j, i) {
       return {
         n: base + i + 1, a: j.a, b: j.b, fora: j.fora || [],
-        status: 'pendente', placar: { A: 0, B: 0 }, vencedor: null, tipo: 'normal', em: null
+        status: 'pendente', placar: { A: 0, B: 0 }, vencedor: null, tipo: 'normal', em: null,
+        historico: null
       };
     });
+  }
+
+  /* registro de auditoria em nivel de campeonato (quem presenteou, iniciou,
+     cancelou, trocou config etc). O historico mao-a-mao de uma partida em si
+     fica dentro da propria partida (js/match.js `registrar`) e e preservado
+     em jogo.historico quando a partida e finalizada — ver case 'finalizar'. */
+  function registrarLog(camp, texto, autor) {
+    if (!camp.log) camp.log = [];
+    camp.log.unshift({ texto: texto, autor: autor || null, em: new Date().toISOString() });
+    if (camp.log.length > 150) camp.log.pop();
   }
 
   /* ---------------- consultas (nao mudam nada) ---------------- */
@@ -64,6 +76,10 @@
     return (ids || []).map(function (i) { return jogador(camp, i); }).join(' + ');
   }
   function presente(camp, idJog) { return camp.presentes[idJog] !== false; }
+  function inativo(camp, idJog) {
+    var j = (camp.jogadores || []).filter(function (x) { return x.id === idJog; })[0];
+    return !!(j && j.inativo);
+  }
   function jogoLiberado(camp, jogo) {
     return jogo.a.concat(jogo.b).every(function (p) { return presente(camp, p); });
   }
@@ -72,6 +88,9 @@
   }
   function acharJogo(camp, n) {
     return camp.jogos.filter(function (x) { return x.n === Number(n); })[0] || null;
+  }
+  function acharJogador(camp, idJog) {
+    return (camp.jogadores || []).filter(function (x) { return x.id === idJog; })[0] || null;
   }
   function emAndamento(camp) {
     return camp.jogos.filter(function (j) { return j.status === 'em_andamento'; });
@@ -101,6 +120,7 @@
     return {
       feitos: camp.jogos.filter(function (j) { return j.status === 'concluido'; }).length,
       andamento: emAndamento(camp).length,
+      pulados: camp.jogos.filter(function (j) { return j.status === 'pulado'; }).length,
       total: camp.jogos.length
     };
   }
@@ -108,7 +128,7 @@
   function classificacao(camp) {
     var linhas = {};
     camp.jogadores.forEach(function (j) {
-      linhas[j.id] = { id: j.id, nome: j.nome, j: 0, v: 0, d: 0, pf: 0, ps: 0, sd: 0, ap: 0, x1: 0 };
+      linhas[j.id] = { id: j.id, nome: j.nome, inativo: !!j.inativo, j: 0, v: 0, d: 0, pf: 0, ps: 0, sd: 0, ap: 0, x1: 0 };
     });
     camp.jogos.forEach(function (g) {
       if (g.status !== 'concluido') return;
@@ -156,50 +176,69 @@
     });
   }
 
+  /* 'pendente'/'em_andamento' sao os unicos status que ainda bloqueiam o
+     campeonato de fechar — 'pulado' (jogador saiu no meio) conta como resolvido */
   function conferirEncerrado(camp) {
-    camp.encerrado = !camp.jogos.some(function (j) { return j.status !== 'concluido'; });
+    camp.encerrado = !camp.jogos.some(function (j) {
+      return j.status === 'pendente' || j.status === 'em_andamento';
+    });
   }
 
-  /* um lance dentro de uma partida — usado pelo reducer e pela partida avulsa */
+  /*
+   * Um lance dentro de uma partida — usado pelo reducer e pela partida avulsa.
+   * Devolve {ok:true} so quando o lance realmente mudou alguma coisa; um lance
+   * que chegou atrasado (mao ja resolvida por outro aparelho) devolve
+   * {ok:false} em vez de fingir sucesso — assim quem chamou sabe que precisa
+   * avisar a pessoa e ressincronizar, em vez de gravar um "nada aconteceu"
+   * como se fosse uma jogada valida.
+   */
   function lanceNaPartida(p, acao) {
     if (!p) return { ok: false, erro: 'partida nao encontrada' };
+    var autor = acao.autor;
+    var mudou;
     switch (acao.lance) {
-      case 'pedir': M.pedir(p, acao.time); break;
-      case 'aceitar': M.aceitar(p); break;
-      case 'correr': M.correr(p); break;
-      case 'aumentar': M.aumentar(p); break;
-      case 'venceu': M.vencerMao(p, acao.time); break;
-      case 'm11': M.resolverMao11(p, acao.decisao); break;
-      case 'ajuste': M.ajustar(p, acao.time, Number(acao.delta) || 0); break;
-      case 'desfazer': M.desfazer(p); break;
+      case 'pedir': mudou = M.pedir(p, acao.time, autor); break;
+      case 'aceitar': mudou = M.aceitar(p, autor); break;
+      case 'correr': mudou = M.correr(p, autor); break;
+      case 'aumentar': mudou = M.aumentar(p, autor); break;
+      case 'venceu': mudou = M.vencerMao(p, acao.time, autor); break;
+      case 'm11': mudou = M.resolverMao11(p, acao.decisao, autor); break;
+      case 'ajuste': mudou = M.ajustar(p, acao.time, acao.delta, autor); break;
+      case 'desfazer': mudou = M.desfazer(p); break;
       default: return { ok: false, erro: 'lance desconhecido' };
     }
-    return { ok: true };
+    return mudou ? { ok: true } : { ok: false, erro: 'essa jogada nao vale mais — o placar ja mudou' };
   }
 
   /* ---------------- o reducer ---------------- */
   /* aplicar(camp, acao) altera camp no lugar e devolve {ok} ou {ok:false, erro}. */
   function aplicar(camp, acao) {
     if (!camp || !acao || !acao.tipo) return { ok: false, erro: 'acao invalida' };
-    var jogo, p;
+    if (!camp.log) camp.log = []; // campeonatos criados antes desse campo existir
+    var jogo, p, autor = acao.autor;
 
     switch (acao.tipo) {
 
-      case 'presenca':
-        if (!camp.presentes.hasOwnProperty(acao.jogador) &&
-            !camp.jogadores.some(function (j) { return j.id === acao.jogador; })) {
-          return { ok: false, erro: 'jogador desconhecido' };
-        }
-        camp.presentes[acao.jogador] = acao.valor !== false;
+      case 'presenca': {
+        var alvoPresenca = acharJogador(camp, acao.jogador);
+        if (!alvoPresenca) return { ok: false, erro: 'jogador desconhecido' };
+        var estava = presente(camp, acao.jogador);
+        var vaiFicar = acao.valor !== false;
+        if (estava === vaiFicar) return { ok: false, erro: 'presenca sem mudanca' };
+        camp.presentes[acao.jogador] = vaiFicar;
+        registrarLog(camp, alvoPresenca.nome + (vaiFicar ? ' chegou' : ' saiu da mesa'), autor);
         return { ok: true };
+      }
 
       case 'iniciar':
         jogo = acharJogo(camp, acao.n);
         if (!jogo) return { ok: false, erro: 'jogo nao encontrado' };
         if (jogo.status === 'concluido') return { ok: false, erro: 'jogo ja concluido' };
+        if (jogo.status === 'pulado') return { ok: false, erro: 'jogo foi pulado' };
         if (!camp.partidas[jogo.n]) camp.partidas[jogo.n] = criarPartidaDoJogo(camp, jogo);
         jogo.status = 'em_andamento';
         conferirEncerrado(camp);
+        registrarLog(camp, 'iniciou o jogo ' + jogo.n, autor);
         return { ok: true };
 
       case 'lance':
@@ -214,6 +253,7 @@
         delete camp.partidas[jogo.n];
         if (jogo.status === 'em_andamento') jogo.status = 'pendente';
         conferirEncerrado(camp);
+        registrarLog(camp, 'cancelou a partida do jogo ' + jogo.n, autor);
         return { ok: true };
 
       case 'finalizar':
@@ -225,8 +265,10 @@
         jogo.placar = { A: p.pontos.A, B: p.pontos.B };
         jogo.vencedor = p.vencedor;
         jogo.em = new Date().toISOString();
+        jogo.historico = p.historico; // guarda o mao-a-mao (com autor) antes de descartar a partida
         delete camp.partidas[jogo.n];
         conferirEncerrado(camp);
+        registrarLog(camp, 'salvou o jogo ' + jogo.n + ': ' + jogo.placar.A + 'x' + jogo.placar.B, autor);
         return { ok: true };
 
       case 'reabrir':
@@ -236,8 +278,10 @@
         jogo.placar = { A: 0, B: 0 };
         jogo.vencedor = null;
         jogo.em = null;
+        jogo.historico = null;
         delete camp.partidas[jogo.n];
         camp.encerrado = false;
+        registrarLog(camp, 'reabriu o jogo ' + jogo.n, autor);
         return { ok: true };
 
       case 'x1': {
@@ -247,6 +291,7 @@
         novos.forEach(function (j) { j.tipo = 'x1'; j.fora = []; });
         camp.jogos = camp.jogos.concat(novos);
         camp.encerrado = false;
+        registrarLog(camp, 'gerou o desempate X1 (' + novos.length + ' jogo' + (novos.length > 1 ? 's' : '') + ')', autor);
         return { ok: true, criados: novos.length };
       }
 
@@ -258,11 +303,53 @@
         camp.jogos = montarJogos(SC.gerarRodizio(
           camp.jogadores.map(function (j) { return j.id; }),
           camp.tamanhoTime, camp.totalJogos, camp.semente));
+        registrarLog(camp, 'sorteou o rodizio de novo', autor);
         return { ok: true };
 
       case 'config':
         camp.config = Object.assign({}, camp.config, acao.config || {});
+        registrarLog(camp, 'mudou a configuracao do campeonato', autor);
         return { ok: true };
+
+      case 'renomear-jogador': {
+        var pRenomear = acharJogador(camp, acao.jogador);
+        if (!pRenomear) return { ok: false, erro: 'jogador desconhecido' };
+        var novoNome = String(acao.nome || '').trim().slice(0, 40);
+        if (!novoNome) return { ok: false, erro: 'nome vazio' };
+        if (novoNome === pRenomear.nome) return { ok: false, erro: 'nome sem mudanca' };
+        var nomeAntigo = pRenomear.nome;
+        pRenomear.nome = novoNome;
+        registrarLog(camp, nomeAntigo + ' passou a se chamar ' + novoNome, autor);
+        return { ok: true };
+      }
+
+      /* jogador sai definitivamente do campeonato (diferente de "nao esta na
+         mesa hoje"): os jogos dele que ainda nao comecaram viram 'pulado' em
+         vez de ficar adiados para sempre, o que deixa o campeonato fechar. */
+      case 'jogador-inativo': {
+        var pInativar = acharJogador(camp, acao.jogador);
+        if (!pInativar) return { ok: false, erro: 'jogador desconhecido' };
+        var ligar = acao.valor !== false;
+        if (!!pInativar.inativo === ligar) return { ok: false, erro: 'sem mudanca' };
+        pInativar.inativo = ligar;
+        if (ligar) {
+          camp.presentes[pInativar.id] = false;
+          camp.jogos.forEach(function (j) {
+            if (j.status === 'pendente' && (j.a.indexOf(pInativar.id) !== -1 || j.b.indexOf(pInativar.id) !== -1)) {
+              j.status = 'pulado';
+            }
+          });
+        } else {
+          camp.jogos.forEach(function (j) {
+            if (j.status === 'pulado' && (j.a.indexOf(pInativar.id) !== -1 || j.b.indexOf(pInativar.id) !== -1)) {
+              j.status = 'pendente';
+            }
+          });
+        }
+        conferirEncerrado(camp);
+        registrarLog(camp, pInativar.nome + (ligar ? ' saiu do campeonato' : ' voltou ao campeonato'), autor);
+        return { ok: true };
+      }
 
       default:
         return { ok: false, erro: 'acao desconhecida: ' + acao.tipo };
@@ -276,8 +363,10 @@
     criarPartidaDoJogo: criarPartidaDoJogo,
     lanceNaPartida: lanceNaPartida,
     aplicar: aplicar,
-    jogador: jogador, nomes: nomes, presente: presente,
+    registrarLog: registrarLog,
+    jogador: jogador, nomes: nomes, presente: presente, inativo: inativo,
     jogoLiberado: jogoLiberado, ausentesDoJogo: ausentesDoJogo, acharJogo: acharJogo,
+    acharJogador: acharJogador,
     emAndamento: emAndamento, pendentes: pendentes, proximoJogo: proximoJogo,
     adiados: adiados, progresso: progresso,
     classificacao: classificacao, empatadosNoTopo: empatadosNoTopo,

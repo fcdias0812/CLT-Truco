@@ -65,6 +65,9 @@ window.CLT = window.CLT || {};
     },
     enviar: function (codigo, acao) {
       return pedir('/api/acao', { metodo: 'POST', corpo: { codigo: codigo, acao: acao } });
+    },
+    trocarCodigo: function (codigoAtual) {
+      return pedir('/api/trocar-codigo', { metodo: 'POST', corpo: { codigo: codigoAtual } });
     }
   };
 })(window.CLT);
