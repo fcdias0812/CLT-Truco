@@ -20,7 +20,28 @@ serverless na Vercel + um Postgres no Neon.
 - **11 a 11 (mão de ferro)**: vale 3 por padrão (dá para trocar para 1 no menu ⋯) e quem ganhar leva a partida.
 - Com um truco pendente na tela, os botões de "quem ganhou a mão" somem: primeiro resolve
   correu / aceitou / aumentou. É o que evita marcar ponto errado no meio da discussão.
-- `−` / `+` em cada placar e **Desfazer** para corrigir qualquer coisa contada errada.
+- `−` / `+` em cada placar (botões grandes, de 44×44px — o mínimo recomendado pela [WCAG](https://www.w3.org/WAI/WCAG21/Understanding/target-size.html)
+  pra tocar sem errar) e **Desfazer** para corrigir qualquer coisa contada errada.
+- O histórico da mão ("O que rolou") fica **recolhido por padrão** — só um botão "Ver o que
+  rolou (N)"; abre quando alguém quiser conferir, sem poluir a tela do jogo.
+
+### Narrador de voz e zoeira 🎙️
+Dois botõezinhos acima das ações da mão: **🔈 Narrador** e **🎪 Zoar**.
+
+- **Narrador** liga a narração falada (usa o Text-to-Speech do próprio aparelho, sem internet
+  nem servidor): anuncia o placar a cada ponto, "fulano ganhou no truco/na seizada/na
+  novena/na dozena" com um som de zoeira quando o truco é jogado até o fim, "fulano perdeu
+  no truco/etc" com som de **pato** quando o time corre, os avisos de mão de 11 e mão de
+  ferro, e o fim de jogo. Cada aparelho narra só o que ele mesmo está vendo na tela — não
+  existe um "narrador da mesa" central.
+- **Zoar** abre 5 botões de animal (🦆 pato, 🐄 vaca, 🐓 galo, 🐷 porco, 🫏 burro) pra qualquer
+  um tocar a qualquer momento, só para provocar.
+- Fica desligado por padrão (ninguém é obrigado a ter som). Liga pelo próprio botão ou pelo
+  menu ⋯. No iPhone, o primeiro toque em "Narrador" já destrava o som do aparelho — sem isso,
+  o Safari bloqueia áudio automático.
+- Os sons ficam em `assets/sons/` — dá pra trocar qualquer um por um áudio próprio (uma
+  gravação engraçada do grupo, por exemplo), bastando salvar por cima com o mesmo nome de
+  arquivo. Créditos e licenças de cada som em `assets/sons/LICENCA.md`.
 
 ### Partida pausada — retomar no dia seguinte
 Partida não se perde. O botão **⏸ Pausar** guarda o placar exatamente onde está e devolve para o
@@ -169,7 +190,9 @@ Em qualquer caso, abra o link no celular e use "Adicionar à tela de início" �
 | `js/nucleo.js` | O "cérebro" compartilhado: aplica as ações no campeonato. **Roda igual no navegador e no servidor** |
 | `js/api.js` | Conversa com o backend |
 | `js/store.js` | Estado do aparelho, sincronização e fila de ações |
+| `js/narrador.js` | Narração por voz (Web Speech API) e efeitos sonoros de zoeira |
 | `js/app.js` | Telas e botões |
+| `assets/sons/` | Os 7 efeitos sonoros (pato, vaca, galo, porco, burro, zoeira, fim de jogo) — troque à vontade |
 | `api/criar.js` | `POST /api/criar` — cria a sala e devolve o código |
 | `api/estado.js` | `GET /api/estado` — devolve o campeonato só quando mudou |
 | `api/acao.js` | `POST /api/acao` — aplica uma ação com controle de versão |

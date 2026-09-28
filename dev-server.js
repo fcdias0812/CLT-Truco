@@ -22,7 +22,9 @@ const TIPOS = {
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.mp3': 'audio/mpeg',
+  '.md': 'text/markdown; charset=utf-8'
 };
 
 let banco = {};

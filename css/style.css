@@ -255,6 +255,31 @@ main{max-width:640px;margin:0 auto;padding:16px 14px 48px}
 }
 .opcao.on .marca-caixa{background:var(--ok);border-color:var(--ok);color:#04120a}
 
+.ajuste-pontos{display:flex;gap:10px;justify-content:center;margin-top:8px}
+.botao-ajuste{
+  width:44px;height:44px;flex:none;border-radius:12px;
+  background:var(--verde-600);border:1px solid var(--linha);
+  font-size:24px;font-weight:800;line-height:1;color:var(--texto);
+  display:grid;place-items:center;
+}
+.botao-ajuste:active{transform:translateY(1px);background:var(--verde-700)}
+
+/* ---------- narrador e botoes de zoar (recolhidos por padrao) ---------- */
+.faixa-narrador{display:flex;gap:8px;justify-content:center;margin:2px 0 10px}
+.botao-mini{
+  padding:7px 12px;border-radius:999px;font-size:12px;font-weight:700;
+  background:var(--verde-800);border:1px solid var(--linha);color:var(--texto-fraco);
+}
+.botao-mini.on{background:var(--verde-600);border-color:var(--ok);color:var(--texto)}
+.botao-mini:disabled{opacity:.4}
+.faixa-zoar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:0 0 14px}
+.botao-animal{
+  width:48px;height:48px;border-radius:50%;font-size:24px;
+  background:var(--verde-800);border:1px solid var(--linha);
+  display:grid;place-items:center;
+}
+.botao-animal:active{transform:translateY(1px);background:var(--verde-600)}
+
 .jogo.pausada{border-color:var(--ouro-escuro);background:linear-gradient(180deg,#2a2409,var(--verde-800))}
 .jogo.pausada .num{background:#4a3a0c;color:var(--ouro)}
 .jogo.pulado{opacity:.6}

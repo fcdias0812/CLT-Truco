@@ -386,6 +386,8 @@
       (doCampeonato ? ' · jogo ' + p.origem.n + (p.origem.x1 ? ' (X1)' : '') : '') +
       (E.codigo && doCampeonato ? ' · <span class="ponto-vivo"></span>ao vivo para todos' : '') + '</div>';
 
+    h += faixaNarrador();
+
     if (p.vencedor) {
       h += '<div class="cartao" style="text-align:center;border-color:var(--ouro)">' +
         '<div class="confete">🏆</div>' +
@@ -473,10 +475,34 @@
       '<div class="nome">' + esc(p.times[t].nome) + '</div>' +
       '<div class="membros">' + (mostra ? esc(membros) : '&nbsp;') + '</div>' +
       '<div class="pts">' + p.pontos[t] + '</div>' +
-      '<div class="linha-botoes" style="gap:6px">' +
-      '<button class="botao pequeno fantasma" data-acao="lance" data-arg="ajuste:' + t + ':-1" style="padding:4px">−</button>' +
-      '<button class="botao pequeno fantasma" data-acao="lance" data-arg="ajuste:' + t + ':1" style="padding:4px">+</button>' +
+      '<div class="ajuste-pontos">' +
+      '<button class="botao-ajuste" data-acao="lance" data-arg="ajuste:' + t + ':-1" aria-label="tirar um ponto de ' + esc(p.times[t].nome) + '">−</button>' +
+      '<button class="botao-ajuste" data-acao="lance" data-arg="ajuste:' + t + ':1" aria-label="somar um ponto para ' + esc(p.times[t].nome) + '">+</button>' +
       '</div></div>';
+  }
+
+  /* narrador de voz + botões de zoar: ficam recolhidos por padrão pra não poluir a tela */
+  var zoarAberto = false;
+  var ANIMAIS = [
+    { chave: 'pato', emoji: '🦆' }, { chave: 'vaca', emoji: '🐄' },
+    { chave: 'galo', emoji: '🐓' }, { chave: 'porco', emoji: '🐷' },
+    { chave: 'burro', emoji: '🫏' }
+  ];
+  function faixaNarrador() {
+    var narrador = CLT.narrador;
+    var ligado = narrador && narrador.suportado() && narrador.ativo();
+    var h = '<div class="faixa-narrador">' +
+      '<button class="botao-mini' + (ligado ? ' on' : '') + '" data-acao="narrador-toggle"' +
+      (narrador && narrador.suportado() ? '' : ' disabled title="esse navegador não tem narrador por voz"') + '>' +
+      (ligado ? '🔊 Narrador' : '🔈 Narrador') + '</button>' +
+      '<button class="botao-mini' + (zoarAberto ? ' on' : '') + '" data-acao="zoar-toggle">🎪 Zoar</button>' +
+      '</div>';
+    if (zoarAberto) {
+      h += '<div class="faixa-zoar">' + ANIMAIS.map(function (a) {
+        return '<button class="botao-animal" data-acao="tocar-som" data-arg="' + a.chave + '" title="' + a.chave + '">' + a.emoji + '</button>';
+      }).join('') + '</div>';
+    }
+    return h;
   }
 
   function rodape() {
@@ -493,10 +519,15 @@
         : '');
   }
 
+  var historicoAberto = false;
   function historico(p) {
     if (!p.historico.length) return '';
-    return '<div class="titulo-secao">O que rolou</div><div class="cartao"><ul class="historico">' +
-      listaHistorico(p.historico) + '</ul></div>';
+    if (!historicoAberto) {
+      return '<button class="botao fantasma pequeno" data-acao="historico-toggle" style="margin-bottom:14px">📜 Ver o que rolou (' + p.historico.length + ')</button>';
+    }
+    return '<div class="titulo-secao">O que rolou' +
+      '<button class="botao-mini" data-acao="historico-toggle">ocultar</button></div>' +
+      '<div class="cartao"><ul class="historico">' + listaHistorico(p.historico) + '</ul></div>';
   }
 
   /* usado tanto pelo historico mao-a-mao de uma partida (tem placar) quanto
@@ -512,6 +543,83 @@
       return '<li>' + (l.autor ? '<span class="autor">' + esc(l.autor) + '</span> ' : '') +
         '<b>' + esc(l.texto) + '</b>' + (extra ? ' · <span>' + esc(extra) + '</span>' : '') + '</li>';
     }).join('');
+  }
+
+  /* ---------------- narrador: compara o placar antes/depois e fala o que mudou ----------------
+   * Roda no render(), pra pegar tanto jogadas feitas neste aparelho quanto as que
+   * chegaram da sala pela sincronização — cada aparelho narra so o que ele mesmo esta vendo. */
+  var FRASE_NIVEL = { 3: 'no truco', 6: 'na seizada', 9: 'na novena', 12: 'na dozena' };
+  function fraseNivel(valor) { return FRASE_NIVEL[valor] || ('em ' + valor); }
+  function nomeParaFala(nomeTime) { return String(nomeTime || '').replace(/\s*\+\s*/g, ' e '); }
+
+  function chavePartidaAtual() {
+    if (E.jogoAberto) return 'jogo:' + E.jogoAberto;
+    if (E.avulsa) return 'avulsa:' + E.avulsa.id;
+    return null;
+  }
+  function snapshotNarracao(p) {
+    return {
+      A: p.pontos.A, B: p.pontos.B,
+      valor: p.mao ? p.mao.valor : null,
+      especial: p.mao ? p.mao.especial : null,
+      decisao11: p.mao ? p.mao.decisao11 : null,
+      apostaValor: p.mao && p.mao.aposta ? p.mao.aposta.valor : null,
+      vencedor: p.vencedor
+    };
+  }
+
+  var ultimoEstadoNarrado = null; // { chave, dados }
+  function reiniciarNarracaoDaTela() {
+    ultimoEstadoNarrado = null;
+    historicoAberto = false;
+    zoarAberto = false;
+  }
+
+  function verificarNarracao(p) {
+    var narrador = CLT.narrador;
+    var chave = chavePartidaAtual();
+    if (!p || !chave || !narrador) { ultimoEstadoNarrado = null; return; }
+
+    var atual = snapshotNarracao(p);
+    var antes = (ultimoEstadoNarrado && ultimoEstadoNarrado.chave === chave) ? ultimoEstadoNarrado.dados : null;
+    ultimoEstadoNarrado = { chave: chave, dados: atual };
+    if (!antes || !narrador.ativo()) return; // tela recem-aberta: nao narra o passado
+
+    var terminouAgora = atual.vencedor && !antes.vencedor;
+    var quemGanhou = atual.A > antes.A ? 'A' : (atual.B > antes.B ? 'B' : null);
+
+    if (quemGanhou) {
+      if (antes.apostaValor) {
+        var quemCorreu = quemGanhou === 'A' ? 'B' : 'A';
+        narrador.narrarComSom(nomeParaFala(p.times[quemCorreu].nome) + ' perdeu ' + fraseNivel(antes.apostaValor), 'pato');
+      } else if (antes.decisao11) {
+        narrador.falar(nomeParaFala(p.times[antes.decisao11].nome) + ' correu da mão de onze');
+      } else if (antes.especial !== 'ferro' && antes.especial !== 'm11' && antes.valor >= 3) {
+        narrador.narrarComSom(nomeParaFala(p.times[quemGanhou].nome) + ' ganhou ' + fraseNivel(antes.valor), 'zoeira');
+      }
+      if (!terminouAgora) {
+        narrador.falar(atual.A === atual.B
+          ? 'O placar está empatado em ' + atual.A
+          : 'O placar está ' + Math.max(atual.A, atual.B) + ' a ' + Math.min(atual.A, atual.B) +
+            ' para ' + nomeParaFala(p.times[atual.A > atual.B ? 'A' : 'B'].nome));
+      }
+    }
+
+    if (!atual.vencedor) {
+      if (atual.especial === 'm11' && antes.especial !== 'm11') {
+        narrador.falar('Mão de onze pra ' + nomeParaFala(p.times[atual.decisao11].nome) + ' — decide aí!');
+      } else if (atual.especial === 'ferro' && antes.especial !== 'ferro') {
+        narrador.falar('Mão de ferro! Ninguém pede truco, vale tudo!');
+      }
+    }
+
+    if (terminouAgora) {
+      narrador.narrarComSom(
+        'Fim de jogo! ' + nomeParaFala(p.times[atual.vencedor].nome) + ' venceu por ' +
+        Math.max(atual.A, atual.B) + ' a ' + Math.min(atual.A, atual.B),
+        'fimdejogo'
+      );
+    }
   }
 
   /* ---------------- modais ---------------- */
@@ -621,6 +729,11 @@
       '<button class="botao" data-acao="apelido">👤 Apelido: ' +
       (S.apelido() ? esc(S.apelido()) : '<span style="color:var(--texto-fraco)">não definido, toque pra criar</span>') +
       '</button><div style="height:8px"></div>' +
+      (CLT.narrador.suportado()
+        ? '<button class="botao" data-acao="narrador-toggle">' +
+          (CLT.narrador.ativo() ? '🔊 Narrador: ligado' : '🔈 Narrador: desligado') +
+          '<br><small style="color:var(--texto-fraco);font-weight:400">fala os lances em voz alta neste aparelho</small></button><div style="height:8px"></div>'
+        : '') +
       (temCamp ? '<button class="botao" data-acao="jogadores">👥 Jogadores</button><div style="height:8px"></div>' : '') +
       (E.codigo ? '<button class="botao" data-acao="trocar-codigo">🔑 Trocar código da sala</button><div style="height:8px"></div>' : '') +
       (temCamp ? '<button class="botao" data-acao="exportar">⤓ Exportar campeonato (backup)</button><div style="height:8px"></div>' : '') +
@@ -744,6 +857,7 @@
           limite: 12, usarMaoDe11: true, maoDeFerroVale: 3, origem: { tipo: 'avulsa' }
         });
         E.jogoAberto = null;
+        reiniciarNarracaoDaTela();
         fecharModal(); ir('partida');
         break;
       }
@@ -757,6 +871,7 @@
           limite: ant.limite, usarMaoDe11: ant.usarMaoDe11,
           maoDeFerroVale: ant.maoDeFerroVale, origem: { tipo: 'avulsa' }
         });
+        reiniciarNarracaoDaTela();
         S.salvar(); render();
         break;
       }
@@ -783,11 +898,11 @@
         var n = parseInt(arg, 10);
         fecharModal();
         S.despachar({ tipo: 'iniciar', n: n }).then(function () {
-          if (S.partida(n)) { E.jogoAberto = n; ir('partida'); }
+          if (S.partida(n)) { E.jogoAberto = n; reiniciarNarracaoDaTela(); ir('partida'); }
         });
         break;
       }
-      case 'abrir-partida': E.jogoAberto = parseInt(arg, 10); ir('partida'); break;
+      case 'abrir-partida': E.jogoAberto = parseInt(arg, 10); reiniciarNarracaoDaTela(); ir('partida'); break;
       case 'pausar': E.jogoAberto = null; ir('campeonato'); break;
       case 'cancelar-partida': {
         if (!confirm('Cancelar esta partida? O placar dela será apagado e o jogo volta para a fila.')) return;
@@ -839,6 +954,17 @@
         API.definirBase(novo.trim());
         fecharModal();
         location.reload();
+        break;
+      }
+
+      case 'historico-toggle': historicoAberto = !historicoAberto; render(); break;
+      case 'zoar-toggle': zoarAberto = !zoarAberto; render(); break;
+      case 'tocar-som': CLT.narrador.tocarSom(arg); break;
+      case 'narrador-toggle': {
+        var ligar = !CLT.narrador.ativo();
+        CLT.narrador.ativar(ligar);
+        if (ligar) CLT.narrador.destravar(); // precisa ser chamado dentro do toque, senao o iPhone bloqueia o som depois
+        if (!modalFundo.hidden) modalMenu(); else render();
         break;
       }
 
@@ -974,7 +1100,7 @@
     mostrarTorrada();
 
     var p = partidaAtual();
-    if (E.tela === 'partida' && p) tela.innerHTML = viewPartida(p);
+    if (E.tela === 'partida' && p) { verificarNarracao(p); tela.innerHTML = viewPartida(p); }
     else if (E.tela === 'campeonato') tela.innerHTML = viewCampeonato();
     else if (E.tela === 'novo') tela.innerHTML = viewNovo();
     else { E.tela = 'inicio'; tela.innerHTML = viewInicio(); }
