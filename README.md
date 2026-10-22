@@ -4,10 +4,30 @@ Marcador de truco paulista + campeonato com rodízio automático de duplas/trios
 compartilhado ao vivo**: todo mundo abre o mesmo link no próprio celular e vê o mesmo placar,
 sem recarregar a página.
 
-Site estático (HTML + CSS + JavaScript puro, sem framework e sem build) + três funções
+Site estático (HTML + CSS + JavaScript puro, sem framework e sem build) + funções
 serverless na Vercel + um Postgres no Neon.
 
 ---
+
+## Como a tela é organizada
+
+Feito para qualquer um usar sem explicação:
+
+- **Tela inicial**: o campeonato aberto no aparelho aparece no topo com um botão grande
+  **Continuar**; embaixo, os outros campeonatos (toque e digite a senha) e duas opções para
+  começar algo novo: **Criar campeonato** ou **Partida rápida** (só o placar de um jogo).
+- **Criar campeonato** em 3 passos: quem vai jogar → como vai ser (duplas ou trios, quantos
+  jogos, aposta) → onde acompanhar (todo mundo, com senha, ou só neste celular).
+- **Campeonato** com 3 abas:
+  - **Jogar**: o próximo jogo em destaque com **▶ Começar jogo** (ou **Continuar jogo** se
+    algum parou no meio) e a lista de quem está aqui hoje;
+  - **Classificação**: vitórias, jogos e saldo;
+  - **Jogos**: os que faltam e os já jogados (toque num jogado para ver como foi ou corrigir o placar).
+- **Partida**: o botão mais usado — **quem ganhou a mão** — vem primeiro e grande; o truco
+  logo abaixo. Cancelar a partida (que apaga o placar) fica no menu ⋯, longe do dedo.
+- **Menu ⋯** separado por assunto (esta partida, campeonato, este celular). O que quase
+  ninguém usa (regras, equilíbrio do rodízio, sortear de novo, mão de ferro, backup, endereço
+  do servidor) fica em **Mais opções**.
 
 ## O que ele faz
 
@@ -45,8 +65,8 @@ Dois botõezinhos acima das ações da mão: **🔈 Narrador** e **🎪 Zoar**.
 
 ### Partida pausada — retomar no dia seguinte
 Partida não se perde. O botão **⏸ Pausar** guarda o placar exatamente onde está e devolve para o
-painel. A partida fica listada em "Partidas em andamento" com o placar parcial e um botão
-**Retomar**, e continua lá no dia seguinte, na semana que vem, em qualquer aparelho da sala.
+painel. A partida aparece na aba **Jogar** como "parado no meio", com o placar parcial e um botão
+**Continuar jogo**, e continua lá no dia seguinte, na semana que vem, em qualquer aparelho da sala.
 
 Se alguém da partida pausada não veio, é só desmarcar a presença dessa pessoa: a partida passa a
 mostrar "esperando Fulano" (sem botão de retomar) e a fila pula direto para os jogos em que
@@ -101,9 +121,9 @@ Ao entrar numa sala compartilhada pela primeira vez, o app pergunta um apelido (
 Não é login nem senha — é só um rótulo salvo naquele aparelho, que passa a aparecer em:
 
 - **Histórico de cada partida** ("O que rolou"): cada linha mostra quem tocou o botão.
-- **Histórico de uma partida já encerrada**: o ícone 👁 no card do jogo concluído abre o
+- **Histórico de uma partida já encerrada**: tocar no jogo em **Jogos → Já jogados** abre o
   mão-a-mão completo, preservado mesmo depois de salvo no campeonato.
-- **Registro do campeonato** (aba "Registro"): quem marcou presença, iniciou, cancelou ou
+- **Registro do campeonato** (menu ⋯ → **Quem fez o quê**): quem marcou presença, iniciou, cancelou ou
   reabriu um jogo, sorteou o rodízio de novo, etc.
 
 Dá para trocar o apelido a qualquer momento pelo menu **⋯**. Não impede ninguém de agir por
@@ -113,7 +133,7 @@ rastro de quem fez o quê, útil se algum placar ficar em dúvida.
 ### Senha vazou? Alguém saiu no meio?
 - **Trocar senha da sala** (menu ⋯): define uma senha nova sem perder nada do campeonato. Os
   outros aparelhos perdem o acesso na hora e pedem a senha nova na próxima atualização.
-- **Gerenciar jogadores** (botão na tela do campeonato): renomear alguém, ou marcar que
+- **Jogadores** (menu ⋯): renomear alguém, ou marcar que
   **saiu do campeonato**. Diferente de só desmarcar presença (isso é "não veio hoje"), marcar
   como "saiu" resolve os jogos pendentes dessa pessoa como **pulados** — assim o campeonato
   consegue fechar mesmo que alguém desista no meio. É reversível: dá pra marcar "voltou" e os

@@ -14,7 +14,7 @@ window.CLT = window.CLT || {};
   function padrao() {
     return {
       tela: 'inicio',
-      aba: 'proximos',
+      aba: 'jogar',
       codigo: null,        // sala online (null = so neste aparelho)
       token: null,         // recebido ao acertar a senha da sala
       pedirSenha: null,    // { codigo, nome } quando a sala exige a senha de novo
@@ -223,6 +223,7 @@ window.CLT = window.CLT || {};
         estado.versao = r.versao;
         estado.camp = r.camp;
         estado.tela = 'campeonato';
+        estado.aba = 'jogar';
         estado.jogoAberto = null;
         salvar();
         sincronizarAgora();
@@ -236,6 +237,7 @@ window.CLT = window.CLT || {};
     estado.token = null;
     estado.versao = 0;
     estado.tela = 'campeonato';
+    estado.aba = 'jogar';
     estado.jogoAberto = null;
     salvar();
     return Promise.resolve({ ok: true, online: false });
@@ -255,6 +257,7 @@ window.CLT = window.CLT || {};
       estado.camp = r.camp;
       estado.versao = r.versao;
       estado.tela = 'campeonato';
+      estado.aba = 'jogar';
       estado.jogoAberto = null;
       salvar();
       sincronizarAgora();
