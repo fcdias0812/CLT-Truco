@@ -1,5 +1,6 @@
-/* POST /api/criar — cria uma sala (campeonato) e devolve o codigo de entrada */
+/* POST /api/criar — cria uma sala (campeonato) com senha e devolve o codigo + o token de acesso */
 const { sql, novoCodigo, responder, corpoJson, rota } = require('../lib/db.js');
+const senha = require('../lib/senha.js');
 const nucleo = require('../js/nucleo.js');
 
 module.exports = rota(async function (req, res) {
@@ -13,6 +14,10 @@ module.exports = rota(async function (req, res) {
   if (nomes.length < tamanhoTime * 2) {
     return responder(res, 400, { erro: 'jogadores insuficientes para o formato escolhido' });
   }
+  if (!senha.senhaValida(corpo.senha)) {
+    return responder(res, 400, { erro: 'defina uma senha para a sala' });
+  }
+  const hash = senha.hashSenha(corpo.senha);
 
   const camp = nucleo.criarCampeonato({
     nome: String(corpo.nome || 'Champions League de Truco').slice(0, 80),
@@ -29,9 +34,9 @@ module.exports = rota(async function (req, res) {
     if (existe.length) continue;
     camp.codigo = codigo;
     await sql()`
-      INSERT INTO clt_campeonatos (codigo, dados, versao)
-      VALUES (${codigo}, ${JSON.stringify(camp)}::jsonb, 1)`;
-    return responder(res, 200, { codigo: codigo, versao: 1, camp: camp });
+      INSERT INTO clt_campeonatos (codigo, dados, versao, senha_hash)
+      VALUES (${codigo}, ${JSON.stringify(camp)}::jsonb, 1, ${hash})`;
+    return responder(res, 200, { codigo: codigo, versao: 1, camp: camp, token: senha.tokenDaSala(codigo, hash) });
   }
 
   return responder(res, 503, { erro: 'nao consegui gerar um codigo livre, tente de novo' });

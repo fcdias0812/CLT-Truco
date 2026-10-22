@@ -16,6 +16,8 @@ window.CLT = window.CLT || {};
       tela: 'inicio',
       aba: 'proximos',
       codigo: null,        // sala online (null = so neste aparelho)
+      token: null,         // recebido ao acertar a senha da sala
+      pedirSenha: null,    // { codigo, nome } quando a sala exige a senha de novo
       versao: 0,
       camp: null,          // o campeonato
       jogoAberto: null,    // numero do jogo que esta aberto na tela de partida
@@ -50,7 +52,7 @@ window.CLT = window.CLT || {};
   function salvar() {
     try {
       localStorage.setItem(CHAVE, JSON.stringify({
-        tela: estado.tela, aba: estado.aba, codigo: estado.codigo,
+        tela: estado.tela, aba: estado.aba, codigo: estado.codigo, token: estado.token,
         versao: estado.versao, camp: estado.camp,
         jogoAberto: estado.jogoAberto, avulsa: estado.avulsa
       }));
@@ -93,13 +95,26 @@ window.CLT = window.CLT || {};
     timer = setTimeout(bater, intervalo());
   }
 
+  /* o servidor recusou o token (senha trocada, ou sala aberta antes de ter senha):
+     sai da sala neste aparelho e a tela pede a senha pra voltar */
+  function trancar() {
+    estado.pedirSenha = { codigo: estado.codigo, nome: estado.camp ? estado.camp.nome : estado.codigo };
+    estado.codigo = null;
+    estado.token = null;
+    estado.camp = null;
+    estado.versao = 0;
+    estado.jogoAberto = null;
+    estado.tela = 'inicio';
+    salvar();
+  }
+
   function bater() {
     /* com a aba escondida a gente nao para de conferir, so espaca bastante */
     if (!estado.codigo || enviando > 0) {
       agendar();
       return;
     }
-    api.buscar(estado.codigo, estado.versao).then(function (r) {
+    api.buscar(estado.codigo, estado.versao, estado.token).then(function (r) {
       var voltou = estado.conexao !== 'ok';
       estado.conexao = 'ok';
       if (r.mudou) {
@@ -111,8 +126,14 @@ window.CLT = window.CLT || {};
         aoMudar();
       }
     }).catch(function (e) {
+      if (e && e.status === 401) {
+        trancar();
+        aoMudar();
+        return;
+      }
       if (e && e.status === 404) {
         estado.codigo = null;
+        estado.token = null;
         avisar('essa sala nao existe mais no servidor — seguindo offline');
         salvar();
         aoMudar();
@@ -161,13 +182,17 @@ window.CLT = window.CLT || {};
     if (!estado.codigo) return Promise.resolve(true);
 
     enviando++;
-    return api.enviar(estado.codigo, acao).then(function (resp) {
+    return api.enviar(estado.codigo, acao, estado.token).then(function (resp) {
       estado.camp = resp.camp;
       estado.versao = resp.versao;
       estado.conexao = 'ok';
       salvar();
       return true;
     }).catch(function (e) {
+      if (e && e.status === 401) {
+        trancar();
+        return false;
+      }
       /* o servidor recusou (ex: outro aparelho ja fez isso): vale o que ele diz */
       if (e && e.dados && e.dados.camp) {
         estado.camp = e.dados.camp;
@@ -194,6 +219,7 @@ window.CLT = window.CLT || {};
     if (online && estado.backend === 'ok') {
       return api.criar(dados).then(function (r) {
         estado.codigo = r.codigo;
+        estado.token = r.token;
         estado.versao = r.versao;
         estado.camp = r.camp;
         estado.tela = 'campeonato';
@@ -207,6 +233,7 @@ window.CLT = window.CLT || {};
     }
     estado.camp = N.criarCampeonato(dados);
     estado.codigo = null;
+    estado.token = null;
     estado.versao = 0;
     estado.tela = 'campeonato';
     estado.jogoAberto = null;
@@ -214,11 +241,17 @@ window.CLT = window.CLT || {};
     return Promise.resolve({ ok: true, online: false });
   }
 
-  function entrarNaSala(codigo) {
+  function listarSalas() {
+    return api.listar().then(function (r) { return r.salas || []; });
+  }
+
+  function entrarNaSala(codigo, senha) {
     codigo = String(codigo || '').trim().toUpperCase();
-    if (!codigo) return Promise.resolve({ ok: false, erro: 'informe o codigo' });
-    return api.buscar(codigo, 0).then(function (r) {
+    if (!codigo) return Promise.resolve({ ok: false, erro: 'escolha o campeonato' });
+    return api.entrar(codigo, String(senha == null ? '' : senha)).then(function (r) {
       estado.codigo = codigo;
+      estado.token = r.token;
+      estado.pedirSenha = null;
       estado.camp = r.camp;
       estado.versao = r.versao;
       estado.tela = 'campeonato';
@@ -227,12 +260,17 @@ window.CLT = window.CLT || {};
       sincronizarAgora();
       return { ok: true };
     }).catch(function (e) {
-      return { ok: false, erro: e.status === 404 ? 'codigo nao encontrado' : e.message };
+      return {
+        ok: false,
+        senhaErrada: e.status === 401,
+        erro: e.status === 404 ? 'campeonato não encontrado' : e.status === 401 ? 'senha errada' : e.message
+      };
     });
   }
 
   function sairDaSala() {
     estado.codigo = null;
+    estado.token = null;
     estado.camp = null;
     estado.versao = 0;
     estado.jogoAberto = null;
@@ -240,15 +278,13 @@ window.CLT = window.CLT || {};
     salvar();
   }
 
-  /* troca o codigo da sala (ex.: o link vazou) sem perder nada do campeonato */
-  function trocarCodigo() {
+  /* troca a senha da sala; os outros aparelhos vao precisar da senha nova */
+  function trocarSenha(nova) {
     if (!estado.codigo) return Promise.resolve({ ok: false, erro: 'esta sala nao e compartilhada' });
-    return api.trocarCodigo(estado.codigo).then(function (r) {
-      estado.codigo = r.codigo;
-      estado.versao = r.versao;
-      estado.camp = r.camp;
+    return api.trocarSenha(estado.codigo, nova, estado.token).then(function (r) {
+      estado.token = r.token;
       salvar();
-      return { ok: true, codigo: r.codigo };
+      return { ok: true };
     }).catch(function (e) {
       return { ok: false, erro: e.message };
     });
@@ -281,6 +317,7 @@ window.CLT = window.CLT || {};
     if (!c) throw new Error('arquivo sem campeonato');
     estado.camp = c;
     estado.codigo = null;   // backup vira copia local; pra compartilhar, crie a sala de novo
+    estado.token = null;
     estado.versao = 0;
     estado.jogoAberto = null;
     salvar();
@@ -291,8 +328,8 @@ window.CLT = window.CLT || {};
     apelido: apelido, definirApelido: definirApelido,
     iniciarSync: iniciarSync, sincronizarAgora: sincronizarAgora,
     despachar: despachar,
-    criarCampeonato: criarCampeonato, entrarNaSala: entrarNaSala, sairDaSala: sairDaSala,
-    trocarCodigo: trocarCodigo,
+    criarCampeonato: criarCampeonato, listarSalas: listarSalas,
+    entrarNaSala: entrarNaSala, sairDaSala: sairDaSala, trocarSenha: trocarSenha,
     camp: camp, nome: nome, nomes: nomes, presente: presente, inativo: inativo,
     proximoJogo: proximoJogo, adiados: adiados, emAndamento: emAndamento,
     progresso: progresso, classificacao: classificacao, empatadosNoTopo: empatadosNoTopo,

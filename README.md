@@ -71,9 +71,17 @@ ser a primeira da fila.
 - Mostra o **pote** (valor da aposta × número de participantes).
 
 ### Placar compartilhado (a "sala")
-Ao criar o campeonato com a opção **Sala compartilhada** ligada, o app gera um código de 6
-caracteres (ex.: `77SYWB`). Quem abrir o link `…/?sala=77SYWB` — ou digitar o código em
-"Entrar com código da sala" — passa a ver e mexer no mesmo campeonato.
+Ao criar o campeonato com a opção **Sala compartilhada** ligada, você define uma **senha** para
+ele (qualquer uma, sem regra de tamanho — só não pode ficar vazia). Todos os campeonatos
+compartilhados aparecem na tela inicial, em **Campeonatos**; quem tocar em um deles e digitar a
+senha passa a ver e mexer no mesmo campeonato. O botão **Copiar link** (`…/?sala=77SYWB`) também
+funciona: abre direto a tela de senha daquele campeonato.
+
+- A senha não fica guardada no servidor em texto: vai só o *hash* (scrypt). Quem acerta recebe
+  um token que o aparelho guarda, então só precisa digitar uma vez por aparelho.
+- Campeonatos criados antes de existir senha ficaram com a senha **`1234`** (a troca é feita
+  sozinha na primeira chamada da API depois do deploy). Quem já estava dentro de um deles vê a
+  tela de senha uma vez e entra de novo com `1234`.
 
 - Qualquer um pode marcar ponto e pedir truco; a tela dos outros se atualiza sozinha.
 - O servidor é quem manda: cada toque vira uma "ação" aplicada no servidor com controle de
@@ -102,9 +110,9 @@ Dá para trocar o apelido a qualquer momento pelo menu **⋯**. Não impede ning
 outra pessoa (continua sendo "qualquer um pode marcar", como o grupo escolheu) — é só o
 rastro de quem fez o quê, útil se algum placar ficar em dúvida.
 
-### Código vazou? Alguém saiu no meio?
-- **Trocar código da sala** (menu ⋯): gera um código novo pra mesma sala e desativa o antigo
-  na hora, sem perder nada do campeonato — para quando o link foi parar em grupo errado.
+### Senha vazou? Alguém saiu no meio?
+- **Trocar senha da sala** (menu ⋯): define uma senha nova sem perder nada do campeonato. Os
+  outros aparelhos perdem o acesso na hora e pedem a senha nova na próxima atualização.
 - **Gerenciar jogadores** (botão na tela do campeonato): renomear alguém, ou marcar que
   **saiu do campeonato**. Diferente de só desmarcar presença (isso é "não veio hoje"), marcar
   como "saiu" resolve os jogos pendentes dessa pessoa como **pulados** — assim o campeonato
@@ -135,7 +143,8 @@ Só o site, sem sala compartilhada: abrir o `index.html` direto no navegador já
 2. No painel do projeto, em **Connect**, copie a *connection string* (começa com `postgresql://`).
 
 Não precisa criar tabela na mão: a primeira chamada da API cria a tabela `clt_campeonatos`
-sozinha. Se preferir criar antes:
+sozinha (e, num banco que já existia, acrescenta a coluna `senha_hash` e põe a senha `1234` nos
+campeonatos que ainda não tinham). Se preferir criar antes:
 
 ```sql
 CREATE TABLE IF NOT EXISTS clt_campeonatos (
@@ -143,7 +152,8 @@ CREATE TABLE IF NOT EXISTS clt_campeonatos (
   dados         jsonb NOT NULL,
   versao        integer NOT NULL DEFAULT 1,
   criado_em     timestamptz NOT NULL DEFAULT now(),
-  atualizado_em timestamptz NOT NULL DEFAULT now()
+  atualizado_em timestamptz NOT NULL DEFAULT now(),
+  senha_hash    text
 );
 ```
 
@@ -153,7 +163,8 @@ CREATE TABLE IF NOT EXISTS clt_campeonatos (
 3. Em **Environment Variables**, adicione:
    - Nome: `DATABASE_URL`
    - Valor: a connection string do Neon
-4. Deploy. As rotas `/api/criar`, `/api/estado` e `/api/acao` sobem junto, direto da pasta `api/`.
+4. Deploy. As rotas da pasta `api/` (`/api/listar`, `/api/criar`, `/api/entrar`, `/api/estado`,
+   `/api/acao` e `/api/trocar-senha`) sobem junto.
 
 Se mudar a variável depois, é preciso um novo deploy (ou *Redeploy*) para ela valer.
 
@@ -193,11 +204,14 @@ Em qualquer caso, abra o link no celular e use "Adicionar à tela de início" �
 | `js/narrador.js` | Narração por voz (Web Speech API) e efeitos sonoros de zoeira |
 | `js/app.js` | Telas e botões |
 | `assets/sons/` | Os 7 efeitos sonoros (pato, vaca, galo, porco, burro, zoeira, fim de jogo) — troque à vontade |
-| `api/criar.js` | `POST /api/criar` — cria a sala e devolve o código |
-| `api/estado.js` | `GET /api/estado` — devolve o campeonato só quando mudou |
-| `api/acao.js` | `POST /api/acao` — aplica uma ação com controle de versão |
-| `api/trocar-codigo.js` | `POST /api/trocar-codigo` — gera um código novo pra mesma sala |
+| `api/listar.js` | `GET /api/listar` — lista os campeonatos compartilhados (só nome e andamento) |
+| `api/criar.js` | `POST /api/criar` — cria a sala com senha e devolve o código + token |
+| `api/entrar.js` | `POST /api/entrar` — confere a senha e devolve o campeonato + token |
+| `api/estado.js` | `GET /api/estado` — devolve o campeonato só quando mudou (exige o token) |
+| `api/acao.js` | `POST /api/acao` — aplica uma ação com controle de versão (exige o token) |
+| `api/trocar-senha.js` | `POST /api/trocar-senha` — define uma senha nova pra sala |
 | `lib/db.js` | Conexão com o Neon e utilidades das funções |
+| `lib/senha.js` | Hash da senha e token de acesso (usado pela API e pelo `dev-server.js`) |
 | `dev-server.js` | Servidor local de testes (não vai para produção) |
 
 O navegador e o servidor usam **o mesmo arquivo de regras** (`js/nucleo.js`), então não existe

@@ -9,6 +9,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const nucleo = require('./js/nucleo.js');
+const senha = require('./lib/senha.js');
 
 const PORTA = Number(process.env.PORT) || 4173;
 const RAIZ = __dirname;
@@ -29,6 +30,10 @@ const TIPOS = {
 
 let banco = {};
 try { banco = JSON.parse(fs.readFileSync(ARQUIVO, 'utf8')); } catch (e) { banco = {}; }
+/* salas criadas antes de existir senha ficam com a senha padrao (1234) */
+Object.keys(banco).forEach(function (codigo) {
+  if (!banco[codigo].senhaHash) banco[codigo].senhaHash = senha.hashSenha(senha.SENHA_PADRAO);
+});
 function gravar() {
   try { fs.writeFileSync(ARQUIVO, JSON.stringify(banco, null, 2)); } catch (e) {}
 }
@@ -46,10 +51,21 @@ function json(res, status, corpo) {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Token',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
   });
   res.end(txt);
+}
+
+/* mesma regra do lib/db.js: sala existe e o token da senha confere */
+function autorizada(req, res, codigo) {
+  const linha = banco[codigo];
+  if (!linha) { json(res, 404, { erro: 'sala nao encontrada' }); return null; }
+  if (!senha.confereToken(req.headers['x-token'], codigo, linha.senhaHash)) {
+    json(res, 401, { erro: 'precisa da senha da sala' });
+    return null;
+  }
+  return linha;
 }
 
 function lerCorpo(req) {
@@ -71,8 +87,8 @@ const servidor = http.createServer(async function (req, res) {
   if (rota === '/api/estado') {
     const codigo = (url.searchParams.get('codigo') || '').toUpperCase();
     if (!codigo) return json(res, 200, { ok: true, backend: true });
-    const linha = banco[codigo];
-    if (!linha) return json(res, 404, { erro: 'sala nao encontrada' });
+    const linha = autorizada(req, res, codigo);
+    if (!linha) return;
     const versaoCliente = Number(url.searchParams.get('versao') || 0);
     if (versaoCliente === linha.versao) return json(res, 200, { mudou: false, versao: linha.versao });
     return json(res, 200, { mudou: true, versao: linha.versao, camp: linha.camp });
@@ -83,6 +99,7 @@ const servidor = http.createServer(async function (req, res) {
     const nomes = (corpo.nomes || []).map(String).map(function (s) { return s.trim(); }).filter(Boolean);
     const tamanhoTime = Number(corpo.tamanhoTime) === 3 ? 3 : 2;
     if (nomes.length < tamanhoTime * 2) return json(res, 400, { erro: 'jogadores insuficientes' });
+    if (!senha.senhaValida(corpo.senha)) return json(res, 400, { erro: 'defina uma senha para a sala' });
     const camp = nucleo.criarCampeonato({
       nome: corpo.nome, nomes: nomes, tamanhoTime: tamanhoTime,
       totalJogos: Math.min(200, Math.max(1, Number(corpo.totalJogos) || 30)),
@@ -92,35 +109,56 @@ const servidor = http.createServer(async function (req, res) {
     let codigo;
     do { codigo = novoCodigo(); } while (banco[codigo]);
     camp.codigo = codigo;
-    banco[codigo] = { versao: 1, camp: camp };
+    const hash = senha.hashSenha(corpo.senha);
+    banco[codigo] = { versao: 1, camp: camp, senhaHash: hash, atualizadoEm: new Date().toISOString() };
     gravar();
-    return json(res, 200, { codigo: codigo, versao: 1, camp: camp });
+    return json(res, 200, { codigo: codigo, versao: 1, camp: camp, token: senha.tokenDaSala(codigo, hash) });
   }
 
   if (rota === '/api/acao' && req.method === 'POST') {
     const corpo = await lerCorpo(req);
     const codigo = String(corpo.codigo || '').toUpperCase();
-    const linha = banco[codigo];
-    if (!linha) return json(res, 404, { erro: 'sala nao encontrada' });
+    const linha = autorizada(req, res, codigo);
+    if (!linha) return;
     const r = nucleo.aplicar(linha.camp, corpo.acao);
     if (!r.ok) return json(res, 409, { erro: r.erro, versao: linha.versao, camp: linha.camp });
     linha.versao++;
+    linha.atualizadoEm = new Date().toISOString();
     gravar();
     return json(res, 200, { versao: linha.versao, camp: linha.camp });
   }
 
-  if (rota === '/api/trocar-codigo' && req.method === 'POST') {
+  if (rota === '/api/listar') {
+    const salas = Object.keys(banco).map(function (codigo) {
+      const c = banco[codigo].camp;
+      const pr = nucleo.progresso(c);
+      return {
+        codigo: codigo, nome: c.nome || 'Campeonato', jogadores: c.jogadores.length,
+        total: pr.total, feitos: pr.feitos, encerrado: !!c.encerrado,
+        atualizadoEm: banco[codigo].atualizadoEm || null
+      };
+    }).sort(function (a, b) { return String(b.atualizadoEm).localeCompare(String(a.atualizadoEm)); });
+    return json(res, 200, { salas: salas });
+  }
+
+  if (rota === '/api/entrar' && req.method === 'POST') {
     const corpo = await lerCorpo(req);
-    const atual = String(corpo.codigo || '').toUpperCase();
-    const linha = banco[atual];
+    const codigo = String(corpo.codigo || '').toUpperCase();
+    const linha = banco[codigo];
     if (!linha) return json(res, 404, { erro: 'sala nao encontrada' });
-    let novo;
-    do { novo = novoCodigo(); } while (banco[novo]);
-    linha.camp.codigo = novo;
-    banco[novo] = linha;
-    delete banco[atual];
+    if (!senha.confereSenha(String(corpo.senha || ''), linha.senhaHash)) return json(res, 401, { erro: 'senha errada' });
+    return json(res, 200, { codigo: codigo, versao: linha.versao, camp: linha.camp, token: senha.tokenDaSala(codigo, linha.senhaHash) });
+  }
+
+  if (rota === '/api/trocar-senha' && req.method === 'POST') {
+    const corpo = await lerCorpo(req);
+    const codigo = String(corpo.codigo || '').toUpperCase();
+    if (!senha.senhaValida(corpo.senha)) return json(res, 400, { erro: 'a senha nova nao pode ficar vazia' });
+    const linha = autorizada(req, res, codigo);
+    if (!linha) return;
+    linha.senhaHash = senha.hashSenha(corpo.senha);
     gravar();
-    return json(res, 200, { codigo: novo, versao: linha.versao, camp: linha.camp });
+    return json(res, 200, { token: senha.tokenDaSala(codigo, linha.senhaHash) });
   }
 
   /* arquivos estaticos */

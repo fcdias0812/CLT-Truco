@@ -191,6 +191,7 @@ main{max-width:640px;margin:0 auto;padding:16px 14px 48px}
 .jogo.bloqueado{border-style:dashed;opacity:.6}
 .jogo .ganhou{color:var(--ouro)}
 .jogo.prox{border-color:var(--ouro);box-shadow:0 0 0 1px rgba(240,193,75,.25)}
+.sala-item{width:100%;text-align:left}
 
 .abas{display:flex;gap:6px;margin-bottom:12px;background:var(--verde-900);padding:4px;border-radius:12px;border:1px solid var(--linha)}
 .abas button{flex:1;padding:9px;border-radius:9px;font-size:13px;font-weight:700;color:var(--texto-fraco)}

@@ -4,7 +4,7 @@
  * e so grava se ninguem tiver escrito no meio do caminho. Assim dois celulares clicando
  * ao mesmo tempo nao se atropelam.
  */
-const { sql, responder, corpoJson, rota } = require('../lib/db.js');
+const { sql, responder, corpoJson, rota, salaAutorizada } = require('../lib/db.js');
 const nucleo = require('../js/nucleo.js');
 
 module.exports = rota(async function (req, res) {
@@ -16,6 +16,8 @@ module.exports = rota(async function (req, res) {
   if (!codigo || !acao || !acao.tipo) {
     return responder(res, 400, { erro: 'informe codigo e acao' });
   }
+
+  if (!(await salaAutorizada(req, res, codigo))) return;
 
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     const linha = await sql()`SELECT versao, dados FROM clt_campeonatos WHERE codigo = ${codigo}`;

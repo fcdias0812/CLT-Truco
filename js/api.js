@@ -23,9 +23,11 @@ window.CLT = window.CLT || {};
   function pedir(caminho, opcoes) {
     var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     var prazo = setTimeout(function () { if (ctrl) ctrl.abort(); }, (opcoes && opcoes.prazo) || 12000);
+    var cab = { 'Content-Type': 'application/json' };
+    if (opcoes && opcoes.token) cab['X-Token'] = opcoes.token;   // token da senha da sala
     return fetch(base() + caminho, {
       method: (opcoes && opcoes.metodo) || 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: cab,
       body: opcoes && opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined,
       signal: ctrl ? ctrl.signal : undefined
     }).then(function (r) {
@@ -59,15 +61,21 @@ window.CLT = window.CLT || {};
     criar: function (dados) {
       return pedir('/api/criar', { metodo: 'POST', corpo: dados });
     },
-    buscar: function (codigo, versao) {
+    listar: function () {
+      return pedir('/api/listar', { prazo: 9000 });
+    },
+    entrar: function (codigo, senha) {
+      return pedir('/api/entrar', { metodo: 'POST', corpo: { codigo: codigo, senha: senha } });
+    },
+    buscar: function (codigo, versao, token) {
       return pedir('/api/estado?codigo=' + encodeURIComponent(codigo) + '&versao=' + (versao || 0),
-        { prazo: 9000 });
+        { prazo: 9000, token: token });
     },
-    enviar: function (codigo, acao) {
-      return pedir('/api/acao', { metodo: 'POST', corpo: { codigo: codigo, acao: acao } });
+    enviar: function (codigo, acao, token) {
+      return pedir('/api/acao', { metodo: 'POST', corpo: { codigo: codigo, acao: acao }, token: token });
     },
-    trocarCodigo: function (codigoAtual) {
-      return pedir('/api/trocar-codigo', { metodo: 'POST', corpo: { codigo: codigoAtual } });
+    trocarSenha: function (codigo, senha, token) {
+      return pedir('/api/trocar-senha', { metodo: 'POST', corpo: { codigo: codigo, senha: senha }, token: token });
     }
   };
 })(window.CLT);

@@ -15,8 +15,26 @@
 
   var rascunho = {
     nome: 'CLT — Temporada 1', nomes: [], tamanhoTime: 2,
-    totalJogos: 30, valorAposta: 10, online: true
+    totalJogos: 30, valorAposta: 10, online: true, senha: ''
   };
+
+  /* campeonatos compartilhados que aparecem na tela inicial (cada um entra com a senha) */
+  var salas = { itens: null, carregando: false, em: 0, erro: null };
+  function carregarSalas(forcar) {
+    if (salas.carregando || E.backend !== 'ok') return;
+    if (!forcar && salas.itens && Date.now() - salas.em < 20000) return;
+    salas.carregando = true;
+    S.listarSalas().then(function (itens) {
+      salas.itens = itens;
+      salas.erro = null;
+    }, function (e) {
+      salas.erro = e.message;
+    }).then(function () {
+      salas.carregando = false;
+      salas.em = Date.now();
+      if (E.tela === 'inicio') render();
+    });
+  }
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -74,12 +92,11 @@
         '</div>';
     }
 
+    if (E.backend === 'ok') h += listaSalas();
+
     h += '<div class="titulo-secao">Começar</div>';
     h += '<button class="botao ' + (c ? '' : 'primario') + '" data-acao="novo" style="margin-bottom:10px">' +
       (c ? 'Criar outro campeonato' : 'Criar campeonato') + '</button>';
-    if (E.backend === 'ok') {
-      h += '<button class="botao" data-acao="entrar" style="margin-bottom:10px">Entrar com código da sala</button>';
-    }
     h += '<button class="botao" data-acao="avulsa">Partida avulsa (só o placar)</button>';
 
     if (E.backend === 'ausente') {
@@ -97,6 +114,23 @@
       ' e quem ganhar leva a partida.' +
       '</p></div>';
     return h;
+  }
+
+  function listaSalas() {
+    var h = '<div class="titulo-secao">Campeonatos</div>';
+    if (!salas.itens) {
+      return h + '<div class="vazio">' + (salas.erro ? 'não consegui buscar a lista: ' + esc(salas.erro) : 'buscando...') + '</div>';
+    }
+    if (!salas.itens.length) return h + '<div class="vazio">nenhum campeonato compartilhado ainda</div>';
+    return h + salas.itens.map(function (s) {
+      var aqui = s.codigo === E.codigo;
+      return '<button class="jogo sala-item' + (aqui ? ' prox' : '') + '" data-acao="abrir-sala" data-arg="' + esc(s.codigo) + '">' +
+        '<div class="num">' + (aqui ? '▶' : '🔒') + '</div>' +
+        '<div class="times"><b>' + esc(s.nome) + '</b><br>' +
+        '<span class="fora">' + s.jogadores + ' jogadores · ' + s.feitos + ' de ' + s.total + ' jogos' +
+        (s.encerrado ? ' · encerrado' : '') + (aqui ? ' · aberto neste aparelho' : '') + '</span></div>' +
+        '</button>';
+    }).join('');
   }
 
   /* ---------------- novo campeonato ---------------- */
@@ -138,8 +172,12 @@
     if (E.backend === 'ok') {
       h += '<button class="opcao ' + (r.online ? 'on' : '') + '" data-acao="alternar-online">' +
         '<span class="marca-caixa">' + (r.online ? '✓' : '') + '</span>' +
-        '<span><b>Sala compartilhada</b><br><small>gera um código; todo mundo abre no próprio celular e vê o placar ao vivo</small></span>' +
+        '<span><b>Sala compartilhada</b><br><small>aparece na lista de campeonatos de todo mundo; quem tiver a senha entra e vê o placar ao vivo</small></span>' +
         '</button>';
+      if (r.online) {
+        h += '<label class="campo"><span>Senha da sala</span>' +
+          '<input value="' + esc(r.senha) + '" data-campo="senha" placeholder="quem for entrar vai precisar dela" autocomplete="off"></label>';
+      }
     }
 
     if (r.nomes.length >= minimo) {
@@ -183,11 +221,11 @@
 
     if (E.codigo) {
       h += '<div class="cartao sala">' +
-        '<p class="sub">Código da sala — quem digitar isso vê o mesmo placar, ao vivo</p>' +
-        '<div class="codigo-grande">' + esc(E.codigo) + '</div>' +
+        '<p class="sub">Sala compartilhada — o campeonato aparece na tela inicial de todo mundo; ' +
+        'quem tiver a senha entra e vê o mesmo placar, ao vivo</p>' +
+        '<div style="height:10px"></div>' +
         '<div class="linha-botoes">' +
         '<button class="botao pequeno" data-acao="copiar-link">Copiar link</button>' +
-        '<button class="botao pequeno" data-acao="copiar-codigo">Copiar código</button>' +
         '</div></div>';
     }
 
@@ -663,12 +701,13 @@
     );
   }
 
-  function modalEntrar() {
+  function modalSenha(codigo, nome, motivo) {
     abrirModal(
-      '<h3>Entrar na sala</h3><p>Digite o código que aparece no celular de quem criou o campeonato.</p>' +
-      '<label class="campo"><span>Código</span>' +
-      '<input id="fCodigo" placeholder="ABC123" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:.2em;font-size:20px;text-align:center"></label>' +
-      '<button class="botao primario" data-acao="confirmar-entrar">Entrar</button>' +
+      '<h3>' + esc(nome || 'Entrar no campeonato') + '</h3>' +
+      '<p>' + esc(motivo || 'Digite a senha do campeonato — quem criou sabe qual é.') + '</p>' +
+      '<label class="campo"><span>Senha</span>' +
+      '<input id="fSenha" type="password" autocomplete="off" data-arg="' + esc(codigo) + '"></label>' +
+      '<button class="botao primario" data-acao="confirmar-senha" data-arg="' + esc(codigo) + '">Entrar</button>' +
       '<div style="height:8px"></div>' +
       '<button class="botao fantasma" data-acao="fechar">Cancelar</button>'
     );
@@ -735,10 +774,10 @@
           '<br><small style="color:var(--texto-fraco);font-weight:400">fala os lances em voz alta neste aparelho</small></button><div style="height:8px"></div>'
         : '') +
       (temCamp ? '<button class="botao" data-acao="jogadores">👥 Jogadores</button><div style="height:8px"></div>' : '') +
-      (E.codigo ? '<button class="botao" data-acao="trocar-codigo">🔑 Trocar código da sala</button><div style="height:8px"></div>' : '') +
+      (E.codigo ? '<button class="botao" data-acao="trocar-senha">🔑 Trocar senha da sala</button><div style="height:8px"></div>' : '') +
       (temCamp ? '<button class="botao" data-acao="exportar">⤓ Exportar campeonato (backup)</button><div style="height:8px"></div>' : '') +
       '<button class="botao" data-acao="importar">⤒ Importar backup</button><div style="height:8px"></div>' +
-      (E.backend === 'ok' ? '<button class="botao" data-acao="entrar">⌨ Entrar em outra sala</button><div style="height:8px"></div>' : '') +
+      (E.backend === 'ok' ? '<button class="botao" data-acao="ver-salas">📋 Ver todos os campeonatos</button><div style="height:8px"></div>' : '') +
       (temCamp ? '<button class="botao" data-acao="regerar">🎲 Sortear rodízio de novo</button><div style="height:8px"></div>' : '') +
       (temCamp ? '<button class="botao" data-acao="config-ferro">⚙️ Mão de ferro vale ' + E.camp.config.maoDeFerroVale + ' (trocar)</button><div style="height:8px"></div>' : '') +
       '<button class="botao" data-acao="config-api">🔌 Endereço do servidor' +
@@ -814,12 +853,15 @@
       case 'criar-campeonato': {
         lerCampos();
         if (rascunho.nomes.length < rascunho.tamanhoTime * 2) return;
+        var online = rascunho.online && E.backend === 'ok';
+        if (online && !rascunho.senha) { S.avisar('defina uma senha para a sala'); render(); return; }
         var botao = document.querySelector('[data-acao="criar-campeonato"]');
         if (botao) { botao.disabled = true; botao.textContent = 'criando...'; }
         S.criarCampeonato({
           nome: rascunho.nome, nomes: rascunho.nomes, tamanhoTime: rascunho.tamanhoTime,
-          totalJogos: Math.max(1, rascunho.totalJogos), valorAposta: rascunho.valorAposta
-        }, rascunho.online).then(function (r) {
+          totalJogos: Math.max(1, rascunho.totalJogos), valorAposta: rascunho.valorAposta,
+          senha: online ? rascunho.senha : undefined
+        }, online).then(function (r) {
           if (!r.ok) { S.avisar('não consegui criar a sala: ' + r.erro); render(); return; }
           render();
           if (r.online && !S.apelido()) {
@@ -829,24 +871,31 @@
         break;
       }
 
-      case 'entrar': fecharModal(); modalEntrar(); break;
-      case 'confirmar-entrar': {
-        var inp = document.getElementById('fCodigo');
-        var cod = inp ? inp.value : '';
-        var b = document.querySelector('[data-acao="confirmar-entrar"]');
+      case 'ver-salas': fecharModal(); salas.em = 0; ir('inicio'); break;
+      case 'abrir-sala': {
+        if (arg === E.codigo) { ir('campeonato'); break; }
+        var sala = (salas.itens || []).filter(function (x) { return x.codigo === arg; })[0];
+        modalSenha(arg, sala ? sala.nome : null);
+        setTimeout(function () { var f = document.getElementById('fSenha'); if (f) f.focus(); }, 0);
+        break;
+      }
+      case 'confirmar-senha': {
+        var inp = document.getElementById('fSenha');
+        var senhaDigitada = inp ? inp.value : '';
+        var nomeSala = modal.querySelector('h3') ? modal.querySelector('h3').textContent : null;
+        var b = document.querySelector('[data-acao="confirmar-senha"]');
         if (b) { b.disabled = true; b.textContent = 'entrando...'; }
-        S.entrarNaSala(cod).then(function (r) {
+        S.entrarNaSala(arg, senhaDigitada).then(function (r) {
           if (r.ok) {
             fecharModal(); render();
             if (!S.apelido()) modalApelido('Antes de começar: como você quer aparecer no histórico desta sala?');
           } else {
-            S.avisar(r.erro); modalEntrar(); render();
+            S.avisar(r.erro); modalSenha(arg, nomeSala); render();
           }
         });
         break;
       }
       case 'copiar-link': copiar(location.origin + location.pathname + '?sala=' + E.codigo, 'link'); break;
-      case 'copiar-codigo': copiar(E.codigo, 'código'); break;
 
       case 'avulsa': modalAvulsa(); break;
       case 'criar-avulsa': {
@@ -943,7 +992,7 @@
         break;
       case 'sair-camp': {
         if (!confirm(E.codigo
-          ? 'Sair da sala neste aparelho? O campeonato continua no servidor e dá para voltar com o código ' + E.codigo + '.'
+          ? 'Sair da sala neste aparelho? O campeonato continua no servidor e dá para voltar pela lista da tela inicial, com a senha.'
           : 'Apagar este campeonato? Ele só existe neste aparelho.')) return;
         S.sairDaSala(); fecharModal(); render();
         break;
@@ -993,21 +1042,14 @@
         S.despachar({ tipo: 'jogador-inativo', jogador: arg, valor: false }).then(function () { modalJogadores(); });
         break;
 
-      case 'trocar-codigo': {
-        if (!confirm('Trocar o código da sala? O código atual (' + E.codigo + ') para de funcionar na hora — quem ainda não pegou o novo fica de fora até você avisar.')) return;
+      case 'trocar-senha': {
+        var novaSenha = prompt('Senha nova da sala (quem já está dentro vai precisar digitar a nova):', '');
+        if (novaSenha === null) return;
+        if (!novaSenha) { alert('A senha não pode ficar vazia.'); return; }
         fecharModal();
-        S.trocarCodigo().then(function (r) {
-          if (!r.ok) { S.avisar('não consegui trocar: ' + r.erro); render(); return; }
+        S.trocarSenha(novaSenha).then(function (r) {
+          S.avisar(r.ok ? 'senha trocada — avise o grupo da senha nova' : 'não consegui trocar: ' + r.erro, r.ok ? 'ok' : 'erro');
           render();
-          abrirModal(
-            '<h3>Código novo</h3><p>O código antigo não funciona mais. Avise o grupo com este aqui:</p>' +
-            '<div class="codigo-grande" style="text-align:center">' + esc(r.codigo) + '</div>' +
-            '<div class="linha-botoes">' +
-            '<button class="botao pequeno" data-acao="copiar-link">Copiar link</button>' +
-            '<button class="botao pequeno" data-acao="copiar-codigo">Copiar código</button>' +
-            '</div><div style="height:8px"></div>' +
-            '<button class="botao fantasma" data-acao="fechar">Fechar</button>'
-          );
         });
         break;
       }
@@ -1057,7 +1099,7 @@
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Enter') return;
     if (ev.target.id === 'fNovoJogador') { ev.preventDefault(); acao('add-jogador'); }
-    if (ev.target.id === 'fCodigo') { ev.preventDefault(); acao('confirmar-entrar'); }
+    if (ev.target.id === 'fSenha') { ev.preventDefault(); acao('confirmar-senha', ev.target.dataset.arg); }
   });
 
   btnVoltar.addEventListener('click', function () {
@@ -1103,7 +1145,14 @@
     if (E.tela === 'partida' && p) { verificarNarracao(p); tela.innerHTML = viewPartida(p); }
     else if (E.tela === 'campeonato') tela.innerHTML = viewCampeonato();
     else if (E.tela === 'novo') tela.innerHTML = viewNovo();
-    else { E.tela = 'inicio'; tela.innerHTML = viewInicio(); }
+    else { E.tela = 'inicio'; tela.innerHTML = viewInicio(); carregarSalas(); }
+
+    /* o servidor pediu a senha (sala aberta antes de ter senha, ou senha trocada) */
+    if (E.pedirSenha && modalFundo.hidden) {
+      var ps = E.pedirSenha;
+      E.pedirSenha = null;
+      modalSenha(ps.codigo, ps.nome, 'Este campeonato agora pede senha (ou ela foi trocada). Digite a senha para continuar.');
+    }
   }
 
   /* ---------------- partida ---------------- */
@@ -1114,12 +1163,9 @@
   render();
   S.iniciarSync(render);
 
-  if (daUrl && daUrl.toUpperCase() !== E.codigo) {
-    S.entrarNaSala(daUrl).then(function (r) {
-      if (!r.ok) S.avisar('não consegui entrar na sala ' + daUrl + ': ' + r.erro);
-      history.replaceState(null, '', location.pathname);
-      render();
-    });
+  if (daUrl) {
+    history.replaceState(null, '', location.pathname);
+    if (daUrl.toUpperCase() !== E.codigo) modalSenha(daUrl.toUpperCase(), null);
   }
 
   CLT._debug = { S: S, M: M, SC: SC, N: N, render: render, acao: acao };
